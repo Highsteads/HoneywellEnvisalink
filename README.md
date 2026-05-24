@@ -116,5 +116,3 @@ send me a DM (forum user **CliveS**). Please include:
 - What you were doing and what happened
 - If something went sideways, attach the output of the **Plugins → HoneywellEnvisalink → Save diagnostic bundle** menu item — it's a JSON file written to
   `/tmp/`, safe to share verbatim (contains no password and no user codes)
-
-GitHub issues are also fine if you prefer, but the forum is where I live day-to-day so I'll see it sooner.
