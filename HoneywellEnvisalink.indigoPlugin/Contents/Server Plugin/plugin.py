@@ -444,6 +444,7 @@ class Plugin(indigo.PluginBase):
             json.dump(bundle, f, indent=2, default=str)
         indigo.server.log(f"Diagnostic bundle written to {path}")
         indigo.server.log("Safe to share — contains no password and no user codes.")
+        indigo.server.log("Send via the Indigo forum (thread reply or DM 'CliveS').")
 
     def menu_toggle_debug_protocol(self, valuesDict=None, typeId=None):
         self.debug_protocol = not self.debug_protocol

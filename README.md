@@ -106,5 +106,15 @@ MIT — see [LICENSE](LICENSE). Use it, fork it, butcher it.
 
 [Highsteads](https://github.com/Highsteads) / CliveS
 
-If you're a test pilot, please raise an issue on this repo with your panel model, Envisalink model, what you tried, what happened, and (if anything went
-sideways) the output of the **Save diagnostic bundle** menu item.
+## Reporting issues
+
+Easiest way to get hold of me is via the **[Indigo forum](https://forums.indigodomo.com/)** — either reply in the relevant thread, start a new one, or
+send me a DM (forum user **CliveS**). Please include:
+
+- Your **panel model** (Vista 15P / 20P / 21iP / 128BP / 250BP / other)
+- Your **Envisalink model** (EVL3 / EVL4 / EVL5)
+- What you were doing and what happened
+- If something went sideways, attach the output of the **Plugins → HoneywellEnvisalink → Save diagnostic bundle** menu item — it's a JSON file written to
+  `/tmp/`, safe to share verbatim (contains no password and no user codes)
+
+GitHub issues are also fine if you prefer, but the forum is where I live day-to-day so I'll see it sooner.
