@@ -5,13 +5,13 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>English</string>
     <key>CFBundleDisplayName</key>
-    <string>HoneywellEnvisalink</string>
+    <string>HoneywellEnvisalink (BETA)</string>
     <key>CFBundleIdentifier</key>
     <string>com.highsteads.indigoplugin.honeywell-envisalink</string>
     <key>CFBundleVersion</key>
-    <string>0.1.0</string>
+    <string>0.1.0-beta</string>
     <key>PluginVersion</key>
-    <string>0.1.0</string>
+    <string>0.1.0-beta</string>
     <key>ServerApiVersion</key>
     <string>3.0</string>
     <key>CFBundleName</key>

@@ -5,7 +5,7 @@
 #              alarm panels to Indigo via Envisalink network modules (EVL3/EVL4).
 # Author:      Highsteads / CliveS & Claude
 # Date:        24-05-2026
-# Version:     0.1.0
+# Version:     0.1.0-beta
 # Plugin ID:   com.highsteads.indigoplugin.honeywell-envisalink
 
 import os as _os
@@ -39,7 +39,7 @@ try:
 except ImportError:
     ENVISALINK_PASSWORD = ""
 
-PLUGIN_VERSION = "0.1.0"
+PLUGIN_VERSION = "0.1.0-beta"
 PLUGIN_ID = "com.highsteads.indigoplugin.honeywell-envisalink"
 
 
@@ -74,12 +74,13 @@ class Plugin(indigo.PluginBase):
 
         if log_startup_banner:
             extras = [
+                ("Release:",   "BETA — untested on real hardware, report issues to CliveS on Indigo forum"),
                 ("EVL host:",  self.host or "(not configured)"),
                 ("Test mode:", "ON (commands suppressed)" if self.test_mode else "OFF (commands LIVE)"),
             ]
             log_startup_banner(pluginId, pluginDisplayName, pluginVersion, extras=extras)
         else:
-            indigo.server.log(f"{pluginDisplayName} v{pluginVersion} starting")
+            indigo.server.log(f"{pluginDisplayName} v{pluginVersion} starting — BETA, report issues on Indigo forum")
 
     # ── Lifecycle ──────────────────────────────────────────────────────────
 
@@ -372,6 +373,7 @@ class Plugin(indigo.PluginBase):
 
     def showPluginInfo(self, valuesDict=None, typeId=None):
         extras = [
+            ("Release:",   "BETA — untested on real hardware, report issues to CliveS on Indigo forum"),
             ("EVL host:",  self.host or "(not configured)"),
             ("Test mode:", "ON (commands suppressed)" if self.test_mode else "OFF (commands LIVE)"),
         ]

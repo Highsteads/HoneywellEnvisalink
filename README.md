@@ -1,13 +1,20 @@
 # HoneywellEnvisalink
 
+> # 🚧 BETA — v0.1.0 — needs beta testers with real hardware
+>
+> This plugin has **never been tested against an actual Honeywell panel**. The protocol implementation, plugin structure, safety rails and test
+> infrastructure are all in place, and a 59-case automated test suite covers the protocol parser/encoder end to end — but only somebody with a real
+> Vista panel and Envisalink module can verify that what the code thinks the panel says matches what your panel actually says.
+>
+> **Do not install this on a panel you depend on for security without reading the [Safety design](#safety-design) section first.** Test mode is on by
+> default for exactly this reason.
+>
+> If you've got Honeywell hardware and are up for being a beta tester, see [Testing & debugging from afar](#testing--debugging-from-afar) below.
+
 An [Indigo Domotics](https://www.indigodomo.com) plugin that connects **Honeywell Vista alarm panels** to Indigo via an **Envisalink** network module.
 
 Fills a long-standing gap: Indigo already has plugins for DSC panels via Envisalink (DSC plugin) and for Honeywell panels via the now-discontinued AD2USB
 serial board (Ademco plugin), but nothing that combines **Honeywell + Envisalink** — until now.
-
-> **⚠ Pre-release software.** This is v0.1.0 — the protocol, plugin structure and test infrastructure are complete, but the plugin has not yet been tested
-> against real hardware. The first installs need to be by people willing to be test pilots and feed back what works and what doesn't. See [Testing &
-> debugging from afar](#testing--debugging-from-afar) below.
 
 ## Hardware support
 
