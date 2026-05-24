@@ -7,7 +7,7 @@
     <key>CFBundleDisplayName</key>
     <string>HoneywellEnvisalink (BETA)</string>
     <key>CFBundleIdentifier</key>
-    <string>com.highsteads.indigoplugin.honeywell-envisalink</string>
+    <string>com.clives.indigoplugin.honeywell-envisalink</string>
     <key>CFBundleVersion</key>
     <string>0.1.0-beta</string>
     <key>PluginVersion</key>

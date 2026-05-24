@@ -6,7 +6,7 @@
 # Author:      Highsteads / CliveS & Claude
 # Date:        24-05-2026
 # Version:     0.1.0-beta
-# Plugin ID:   com.highsteads.indigoplugin.honeywell-envisalink
+# Plugin ID:   com.clives.indigoplugin.honeywell-envisalink
 
 import os as _os
 import sys as _sys
@@ -40,7 +40,7 @@ except ImportError:
     ENVISALINK_PASSWORD = ""
 
 PLUGIN_VERSION = "0.1.0-beta"
-PLUGIN_ID = "com.highsteads.indigoplugin.honeywell-envisalink"
+PLUGIN_ID = "com.clives.indigoplugin.honeywell-envisalink"
 
 
 class Plugin(indigo.PluginBase):
