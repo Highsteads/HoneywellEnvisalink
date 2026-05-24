@@ -1,0 +1,143 @@
+<?xml version="1.0"?>
+<Devices>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         PANEL — one per Envisalink module. Represents the panel itself
+         and overall connectivity. Create one of these first.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <Device type="custom" id="panel">
+        <Name>Honeywell Panel (via Envisalink)</Name>
+        <ConfigUI>
+            <Field id="info" type="label">
+                <Label>The panel device represents your Honeywell Vista panel and the Envisalink module connecting it to Indigo. You need exactly one of these.</Label>
+            </Field>
+            <Field id="model" type="menu" defaultValue="vista20p">
+                <Label>Panel model:</Label>
+                <List>
+                    <Option value="vista15p">Vista 15P</Option>
+                    <Option value="vista20p">Vista 20P</Option>
+                    <Option value="vista21ip">Vista 21iP</Option>
+                    <Option value="vista128bp">Vista 128BP</Option>
+                    <Option value="vista250bp">Vista 250BP</Option>
+                    <Option value="other">Other Vista</Option>
+                </List>
+            </Field>
+            <Field id="evl_model" type="menu" defaultValue="evl4">
+                <Label>Envisalink model:</Label>
+                <List>
+                    <Option value="evl3">Envisalink 3</Option>
+                    <Option value="evl4">Envisalink 4</Option>
+                    <Option value="evl5">Envisalink 5</Option>
+                </List>
+            </Field>
+        </ConfigUI>
+        <States>
+            <State id="connected">
+                <ValueType>Boolean</ValueType>
+                <TriggerLabel>Connected</TriggerLabel>
+                <ControlPageLabel>Connected</ControlPageLabel>
+            </State>
+            <State id="last_cid">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Last CID event</TriggerLabel>
+                <ControlPageLabel>Last CID</ControlPageLabel>
+            </State>
+        </States>
+        <UiDisplayStateId>connected</UiDisplayStateId>
+    </Device>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         PARTITION — one per active partition (most homes: just partition 1)
+         ═══════════════════════════════════════════════════════════════════ -->
+    <Device type="custom" id="partition">
+        <Name>Honeywell Partition</Name>
+        <ConfigUI>
+            <Field id="partition_number" type="textfield" defaultValue="1">
+                <Label>Partition number (1-8):</Label>
+            </Field>
+        </ConfigUI>
+        <States>
+            <State id="state">
+                <ValueType>
+                    <List>
+                        <Option value="unknown">Unknown</Option>
+                        <Option value="ready">Ready</Option>
+                        <Option value="not_ready">Not Ready</Option>
+                        <Option value="armed_away">Armed Away</Option>
+                        <Option value="armed_stay">Armed Stay</Option>
+                        <Option value="armed_instant">Armed Instant</Option>
+                        <Option value="armed_max">Armed Max</Option>
+                        <Option value="entry_delay">Entry Delay</Option>
+                        <Option value="exit_delay">Exit Delay</Option>
+                        <Option value="alarm">ALARM</Option>
+                        <Option value="alarm_memory">Alarm Memory</Option>
+                        <Option value="trouble">Trouble</Option>
+                    </List>
+                </ValueType>
+                <TriggerLabel>Partition state</TriggerLabel>
+                <ControlPageLabel>State</ControlPageLabel>
+            </State>
+            <State id="display">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Keypad display</TriggerLabel>
+                <ControlPageLabel>Display</ControlPageLabel>
+            </State>
+            <State id="armed">    <ValueType>Boolean</ValueType><TriggerLabel>Armed</TriggerLabel><ControlPageLabel>Armed</ControlPageLabel></State>
+            <State id="ready">    <ValueType>Boolean</ValueType><TriggerLabel>Ready</TriggerLabel><ControlPageLabel>Ready</ControlPageLabel></State>
+            <State id="trouble">  <ValueType>Boolean</ValueType><TriggerLabel>Trouble</TriggerLabel><ControlPageLabel>Trouble</ControlPageLabel></State>
+            <State id="bypass">   <ValueType>Boolean</ValueType><TriggerLabel>Bypass</TriggerLabel><ControlPageLabel>Bypass</ControlPageLabel></State>
+            <State id="ac_power"> <ValueType>Boolean</ValueType><TriggerLabel>AC Power</TriggerLabel><ControlPageLabel>AC Power</ControlPageLabel></State>
+            <State id="chime">    <ValueType>Boolean</ValueType><TriggerLabel>Chime</TriggerLabel><ControlPageLabel>Chime</ControlPageLabel></State>
+            <State id="alarm">    <ValueType>Boolean</ValueType><TriggerLabel>ALARM</TriggerLabel><ControlPageLabel>ALARM</ControlPageLabel></State>
+            <State id="led_bitmap"><ValueType>String</ValueType><TriggerLabel>LED bitmap</TriggerLabel><ControlPageLabel>LEDs</ControlPageLabel></State>
+            <State id="beep_code"><ValueType>Integer</ValueType><TriggerLabel>Beep code</TriggerLabel><ControlPageLabel>Beep</ControlPageLabel></State>
+        </States>
+        <UiDisplayStateId>state</UiDisplayStateId>
+    </Device>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         ZONE — one per programmed zone (door, motion, glass-break, etc.)
+         Uses the standard Indigo Sensor type so it shows up as a sensor.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <Device type="sensor" id="zone">
+        <Name>Honeywell Zone</Name>
+        <ConfigUI>
+            <Field id="zone_number" type="textfield" defaultValue="0">
+                <Label>Zone number (1-250):</Label>
+            </Field>
+            <Field id="SupportsOnState" type="checkbox" hidden="true" defaultValue="true"/>
+            <Field id="SupportsSensorValue" type="checkbox" hidden="true" defaultValue="false"/>
+            <Field id="AllowOnStateChange" type="checkbox" hidden="true" defaultValue="false"/>
+            <Field id="zone_type" type="menu" defaultValue="other">
+                <Label>Zone type (informational):</Label>
+                <List>
+                    <Option value="door">Door / Window contact</Option>
+                    <Option value="motion">Motion detector</Option>
+                    <Option value="glass">Glass-break</Option>
+                    <Option value="smoke">Smoke / heat</Option>
+                    <Option value="co">CO detector</Option>
+                    <Option value="panic">Panic button</Option>
+                    <Option value="other">Other</Option>
+                </List>
+            </Field>
+        </ConfigUI>
+        <States>
+            <State id="zone_state">
+                <ValueType>
+                    <List>
+                        <Option value="unknown">Unknown</Option>
+                        <Option value="closed">Closed</Option>
+                        <Option value="open">Open</Option>
+                        <Option value="bypass">Bypassed</Option>
+                        <Option value="trouble">Trouble</Option>
+                        <Option value="alarm">Alarm</Option>
+                    </List>
+                </ValueType>
+                <TriggerLabel>Zone state</TriggerLabel>
+                <ControlPageLabel>State</ControlPageLabel>
+            </State>
+        </States>
+        <UiDisplayStateId>zone_state</UiDisplayStateId>
+    </Device>
+
+</Devices>

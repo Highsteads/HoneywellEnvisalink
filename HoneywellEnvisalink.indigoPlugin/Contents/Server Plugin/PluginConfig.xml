@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<PluginConfig>
+
+    <Field id="header" type="label">
+        <Label>HoneywellEnvisalink — connect Honeywell Vista panels to Indigo via Envisalink modules.</Label>
+    </Field>
+
+    <Field id="sep1" type="separator"/>
+
+    <Field id="host" type="textfield">
+        <Label>Envisalink IP address or hostname:</Label>
+    </Field>
+    <Field id="port" type="textfield" defaultValue="4025">
+        <Label>TCP port (default 4025):</Label>
+    </Field>
+
+    <Field id="password" type="textfield" secure="true">
+        <Label>EVL password (defaults to 'user'):</Label>
+    </Field>
+    <Field id="password_note" type="label" fontSize="small" fontColor="darkgray">
+        <Label>If you keep secrets in /Library/Application Support/Perceptive Automation/IndigoSecrets.py, set ENVISALINK_PASSWORD there and it will be used in preference to the value above.</Label>
+    </Field>
+
+    <Field id="sep2" type="separator"/>
+
+    <Field id="test_mode" type="checkbox" defaultValue="true">
+        <Label>Test mode (SAFE):</Label>
+        <Description>When ON, the plugin reads state from the panel and updates Indigo devices, but BLOCKS all arm/disarm/bypass commands from being sent. Recommended on first install — disable only when you've verified state reading works correctly.</Description>
+    </Field>
+
+    <Field id="debug_protocol" type="checkbox" defaultValue="false">
+        <Label>Verbose protocol logging:</Label>
+        <Description>Logs every raw TPI line sent and received (user codes redacted). Useful for diagnosing connection or panel-compatibility issues. Generates a lot of log output — leave off in normal operation.</Description>
+    </Field>
+
+    <Field id="debug_logging" type="checkbox" defaultValue="false">
+        <Label>General debug logging:</Label>
+        <Description>Logs frame-dispatch decisions and other internal events.</Description>
+    </Field>
+
+</PluginConfig>

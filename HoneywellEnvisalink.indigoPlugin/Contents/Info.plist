@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>English</string>
+    <key>CFBundleDisplayName</key>
+    <string>HoneywellEnvisalink</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.highsteads.indigoplugin.honeywell-envisalink</string>
+    <key>CFBundleVersion</key>
+    <string>0.1.0</string>
+    <key>PluginVersion</key>
+    <string>0.1.0</string>
+    <key>ServerApiVersion</key>
+    <string>3.0</string>
+    <key>CFBundleName</key>
+    <string>HoneywellEnvisalink</string>
+    <key>CFBundlePackageType</key>
+    <string>BNDL</string>
+</dict>
+</plist>

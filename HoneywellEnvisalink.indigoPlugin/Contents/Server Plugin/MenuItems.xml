@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<MenuItems>
+
+    <MenuItem id="testConnection">
+        <Name>Test connection</Name>
+        <CallbackMethod>menu_test_connection</CallbackMethod>
+    </MenuItem>
+
+    <MenuItem id="dumpRecentTraffic">
+        <Name>Dump recent protocol traffic to log</Name>
+        <CallbackMethod>menu_dump_recent_traffic</CallbackMethod>
+    </MenuItem>
+
+    <MenuItem id="saveDiagBundle">
+        <Name>Save diagnostic bundle (for sharing)</Name>
+        <CallbackMethod>menu_save_diagnostic_bundle</CallbackMethod>
+    </MenuItem>
+
+    <MenuItem id="sep0" isSeparator="true"/>
+
+    <MenuItem id="toggleDebugProtocol">
+        <Name>Toggle verbose protocol logging</Name>
+        <CallbackMethod>menu_toggle_debug_protocol</CallbackMethod>
+    </MenuItem>
+
+    <MenuItem id="toggleTestMode">
+        <Name>Toggle test mode (commands suppressed / live)</Name>
+        <CallbackMethod>menu_toggle_test_mode</CallbackMethod>
+    </MenuItem>
+
+    <MenuItem id="sep1" isSeparator="true"/>
+
+    <MenuItem id="showPluginInfo">
+        <Name>Show Plugin Info</Name>
+        <CallbackMethod>showPluginInfo</CallbackMethod>
+    </MenuItem>
+
+</MenuItems>

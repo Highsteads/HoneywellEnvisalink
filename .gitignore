@@ -1,0 +1,21 @@
+# Secrets
+IndigoSecrets.py
+**/IndigoSecrets.py
+secrets.py
+**/secrets.py
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+
+# macOS
+.DS_Store
+
+# Indigo runtime
+*.indigoPlugin/Contents/Packages/
+
+# Local CLAUDE.md (per-user)
+CLAUDE.md

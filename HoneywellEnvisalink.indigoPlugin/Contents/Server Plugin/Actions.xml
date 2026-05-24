@@ -1,0 +1,70 @@
+<?xml version="1.0"?>
+<Actions>
+
+    <Action id="disarm" deviceFilter="self.partition" uiPath="DeviceActions">
+        <Name>Disarm</Name>
+        <CallbackMethod>action_disarm</CallbackMethod>
+        <ConfigUI>
+            <Field id="warn" type="label">
+                <Label>WARNING: this sends a real disarm command to the alarm panel. Test mode (in plugin config) blocks this from doing anything until you've explicitly disabled it.</Label>
+            </Field>
+            <Field id="user_code" type="textfield" secure="true">
+                <Label>User code (4 or 6 digits):</Label>
+            </Field>
+        </ConfigUI>
+    </Action>
+
+    <Action id="arm_away" deviceFilter="self.partition" uiPath="DeviceActions">
+        <Name>Arm — Away</Name>
+        <CallbackMethod>action_arm_away</CallbackMethod>
+        <ConfigUI>
+            <Field id="user_code" type="textfield" secure="true">
+                <Label>User code (4 or 6 digits):</Label>
+            </Field>
+        </ConfigUI>
+    </Action>
+
+    <Action id="arm_stay" deviceFilter="self.partition" uiPath="DeviceActions">
+        <Name>Arm — Stay</Name>
+        <CallbackMethod>action_arm_stay</CallbackMethod>
+        <ConfigUI>
+            <Field id="user_code" type="textfield" secure="true">
+                <Label>User code (4 or 6 digits):</Label>
+            </Field>
+        </ConfigUI>
+    </Action>
+
+    <Action id="arm_instant" deviceFilter="self.partition" uiPath="DeviceActions">
+        <Name>Arm — Instant</Name>
+        <CallbackMethod>action_arm_instant</CallbackMethod>
+        <ConfigUI>
+            <Field id="user_code" type="textfield" secure="true">
+                <Label>User code (4 or 6 digits):</Label>
+            </Field>
+        </ConfigUI>
+    </Action>
+
+    <Action id="arm_max" deviceFilter="self.partition" uiPath="DeviceActions">
+        <Name>Arm — Max</Name>
+        <CallbackMethod>action_arm_max</CallbackMethod>
+        <ConfigUI>
+            <Field id="user_code" type="textfield" secure="true">
+                <Label>User code (4 or 6 digits):</Label>
+            </Field>
+        </ConfigUI>
+    </Action>
+
+    <Action id="bypass_zone" deviceFilter="self.partition" uiPath="DeviceActions">
+        <Name>Bypass zone</Name>
+        <CallbackMethod>action_bypass_zone</CallbackMethod>
+        <ConfigUI>
+            <Field id="user_code" type="textfield" secure="true">
+                <Label>User code:</Label>
+            </Field>
+            <Field id="zone_number" type="textfield">
+                <Label>Zone to bypass:</Label>
+            </Field>
+        </ConfigUI>
+    </Action>
+
+</Actions>

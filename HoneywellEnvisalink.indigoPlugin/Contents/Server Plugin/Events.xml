@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<Events>
+    <Event id="alarm_triggered"><Name>Alarm triggered</Name></Event>
+    <Event id="armed_away"><Name>Partition armed (away)</Name></Event>
+    <Event id="armed_stay"><Name>Partition armed (stay)</Name></Event>
+    <Event id="disarmed"><Name>Partition disarmed</Name></Event>
+    <Event id="evl_disconnected"><Name>Envisalink disconnected</Name></Event>
+</Events>
