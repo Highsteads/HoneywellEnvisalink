@@ -13,7 +13,9 @@ import platform
 import sys
 
 
-_BAR_WIDTH = 110
+_BAR_WIDTH = 80   # narrow enough that a title embedded in the bar doesn't wrap
+                  # in the Indigo log viewer (letters render fractionally wider
+                  # than '=', so 110-wide bars hit the wrap point on the title row)
 
 
 def log_startup_banner(plugin_id, display_name, version, extras=None):
