@@ -21,18 +21,23 @@ def log_startup_banner(plugin_id, display_name, version, extras=None):
     Print a multi-line banner using raw indigo.server.log (no timestamp prefix
     from any logging filter) so the banner stays clean and easy to spot.
 
-    Uses ASCII '=' for the bar (not the Unicode '═' box-drawing char) so the
-    bar and the centred title row are guaranteed the same visual width in
-    every terminal / font — '═' renders fractionally wider than a space in
-    several common monospace fonts, which throws the centring off visually.
+    The title is embedded INSIDE a single bar line (rather than centred on a
+    separate row between two bars) so the visual centring doesn't depend on
+    spaces and '=' characters rendering at identical widths — they don't
+    always, in the Indigo client's log viewer font. By making the padding on
+    each side of the title from the same character as the bar itself, the
+    title is unambiguously sat in the middle of the bar regardless of font.
     """
-    title = f"{display_name} v{version}"
-    bar = "=" * _BAR_WIDTH
-    centred = title.center(_BAR_WIDTH)
+    title = f" {display_name} v{version} "
+    pad = max(0, _BAR_WIDTH - len(title))
+    left = pad // 2
+    right = pad - left
+    title_bar = ("=" * left) + title + ("=" * right)
+    plain_bar = "=" * _BAR_WIDTH
 
-    indigo.server.log(bar)
-    indigo.server.log(centred)
-    indigo.server.log(bar)
+    indigo.server.log(plain_bar)
+    indigo.server.log(title_bar)
+    indigo.server.log(plain_bar)
     indigo.server.log(f"  Plugin ID       : {plugin_id}")
     indigo.server.log(f"  Plugin version  : {version}")
     indigo.server.log(f"  Indigo version  : {indigo.server.version}")
@@ -46,4 +51,4 @@ def log_startup_banner(plugin_id, display_name, version, extras=None):
             # values line up consistently across the whole banner.
             clean_label = label.rstrip(":").rstrip()
             indigo.server.log(f"  {clean_label:15s} : {value}")
-    indigo.server.log(bar)
+    indigo.server.log(plain_bar)
