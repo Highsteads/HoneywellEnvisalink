@@ -72,15 +72,7 @@ class Plugin(indigo.PluginBase):
         # EVL client (created on startup)
         self.client = None
 
-        if log_startup_banner:
-            extras = [
-                ("Release:",   "BETA — untested on real hardware, report issues to CliveS on Indigo forum"),
-                ("EVL host:",  self.host or "(not configured)"),
-                ("Test mode:", "ON (commands suppressed)" if self.test_mode else "OFF (commands LIVE)"),
-            ]
-            log_startup_banner(pluginId, pluginDisplayName, pluginVersion, extras=extras)
-        else:
-            indigo.server.log(f"{pluginDisplayName} v{pluginVersion} starting — BETA, report issues on Indigo forum")
+        # Startup banner moved to showPluginInfo on demand (revised 25-May-2026 per Jay).
 
     # ── Lifecycle ──────────────────────────────────────────────────────────
 

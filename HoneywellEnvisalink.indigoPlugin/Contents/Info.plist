@@ -2,21 +2,21 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleDevelopmentRegion</key>
-    <string>English</string>
-    <key>CFBundleDisplayName</key>
-    <string>HoneywellEnvisalink (BETA)</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.clives.indigoplugin.honeywell-envisalink</string>
-    <key>CFBundleVersion</key>
-    <string>0.1.2-beta</string>
-    <key>PluginVersion</key>
-    <string>0.1.2-beta</string>
-    <key>ServerApiVersion</key>
-    <string>3.0</string>
-    <key>CFBundleName</key>
-    <string>HoneywellEnvisalink</string>
-    <key>CFBundlePackageType</key>
-    <string>BNDL</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>English</string>
+	<key>CFBundleDisplayName</key>
+	<string>HoneywellEnvisalink (BETA)</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.clives.indigoplugin.honeywell-envisalink</string>
+	<key>CFBundleName</key>
+	<string>HoneywellEnvisalink</string>
+	<key>CFBundlePackageType</key>
+	<string>BNDL</string>
+	<key>CFBundleVersion</key>
+	<string>1.0.0</string>
+	<key>PluginVersion</key>
+	<string>0.1.2-beta</string>
+	<key>ServerApiVersion</key>
+	<string>3.0</string>
 </dict>
 </plist>
