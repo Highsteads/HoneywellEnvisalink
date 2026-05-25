@@ -41,5 +41,9 @@ def log_startup_banner(plugin_id, display_name, version, extras=None):
     indigo.server.log(f"  macOS           : {platform.mac_ver()[0]}")
     if extras:
         for label, value in extras:
-            indigo.server.log(f"  {label:16s}{value}")
+            # Strip any trailing colon from the supplied label, then format with
+            # the same column layout as the standard fields above so colons and
+            # values line up consistently across the whole banner.
+            clean_label = label.rstrip(":").rstrip()
+            indigo.server.log(f"  {clean_label:15s} : {value}")
     indigo.server.log(bar)
