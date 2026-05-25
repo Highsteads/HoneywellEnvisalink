@@ -87,12 +87,17 @@ class Plugin(indigo.PluginBase):
     def startup(self):
         self.logger.info("startup")
         if not self.host:
-            self.logger.error("No EVL host configured. Open Plugins → HoneywellEnvisalink → Configure.")
+            # Not an ERROR — just the expected state of a fresh install.
+            # Logged at INFO so it doesn't show as red in the event log.
+            self.logger.info(
+                "Waiting for configuration — open Plugins → HoneywellEnvisalink → Configure "
+                "to set your Envisalink host and password."
+            )
             return
         if not self.password:
-            self.logger.error(
-                "No EVL password set. Either define ENVISALINK_PASSWORD in IndigoSecrets.py or "
-                "enter it in Plugins → HoneywellEnvisalink → Configure."
+            self.logger.info(
+                "Waiting for EVL password — either define ENVISALINK_PASSWORD in IndigoSecrets.py "
+                "or enter it in Plugins → HoneywellEnvisalink → Configure."
             )
             return
         self._start_client()
