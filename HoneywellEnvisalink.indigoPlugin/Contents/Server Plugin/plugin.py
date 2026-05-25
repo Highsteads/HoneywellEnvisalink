@@ -122,7 +122,7 @@ class Plugin(indigo.PluginBase):
     def closedPrefsConfigUi(self, valuesDict, userCancelled):
         if userCancelled:
             return
-        # Pick up changes and restart the client
+        # Pick up changes
         self.host = valuesDict.get("host", "")
         self.port = int(valuesDict.get("port", "4025"))
         self.password = ENVISALINK_PASSWORD or valuesDict.get("password", "")
@@ -130,6 +130,27 @@ class Plugin(indigo.PluginBase):
         self.debug_protocol = valuesDict.get("debug_protocol", False)
         self.debug_logging = valuesDict.get("debug_logging", False)
         self.debug = self.debug_logging
+
+        # Guard: same checks as startup() — don't kick off a connection loop
+        # that can only fail. Stop any existing client so a previously-good
+        # config that was then blanked doesn't keep retrying in the background.
+        if not self.host:
+            self.logger.error("No EVL host configured — connection not started.")
+            if self.client:
+                self.client.stop()
+                self.client = None
+            return
+        if not self.password:
+            self.logger.error(
+                "No EVL password set — connection not started. "
+                "Either define ENVISALINK_PASSWORD in IndigoSecrets.py or "
+                "enter it in Plugins → HoneywellEnvisalink → Configure."
+            )
+            if self.client:
+                self.client.stop()
+                self.client = None
+            return
+
         self.logger.info("config saved — restarting EVL client")
         self._start_client()
 
