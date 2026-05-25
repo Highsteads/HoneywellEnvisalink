@@ -7,7 +7,7 @@
 #              regression tests in CI.
 # Author:      Highsteads / CliveS & Claude
 # Date:        24-05-2026
-# Version:     0.1.0
+# Version:     0.1.1
 #
 # Usage:
 #   python3 tools/mock_evl_server.py [--port 4025] [--password user] [--scenario default]

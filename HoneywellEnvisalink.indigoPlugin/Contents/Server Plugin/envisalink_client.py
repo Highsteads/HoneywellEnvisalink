@@ -7,7 +7,7 @@
 #              in both directions (with user codes redacted).
 # Author:      Highsteads / CliveS & Claude
 # Date:        24-05-2026
-# Version:     0.1.0
+# Version:     0.1.1
 
 import socket
 import threading

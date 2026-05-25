@@ -1,6 +1,6 @@
 # HoneywellEnvisalink
 
-> # 🚧 BETA — v0.1.0 — needs beta testers with real hardware
+> # 🚧 BETA — v0.1.1 — needs beta testers with real hardware
 >
 > This plugin has **never been tested against an actual Honeywell panel**. The protocol implementation, plugin structure, safety rails and test
 > infrastructure are all in place, and a 59-case automated test suite covers the protocol parser/encoder end to end — but only somebody with a real
@@ -46,7 +46,7 @@ Alarm panels are not lights — getting it wrong has real consequences. The plug
 
 ## Testing & debugging from afar
 
-I (the author) don't have a Honeywell panel to test against, which is why this is a v0.1.0 explicitly looking for test pilots. To make remote debugging
+I (the author) don't have a Honeywell panel to test against, which is why this is a v0.1.1 explicitly looking for test pilots. To make remote debugging
 tractable, the plugin ships with:
 
 ### Built-in diagnostic menu items
