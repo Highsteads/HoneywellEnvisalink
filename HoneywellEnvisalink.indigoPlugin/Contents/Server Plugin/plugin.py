@@ -5,7 +5,7 @@
 #              alarm panels to Indigo via Envisalink network modules (EVL3/EVL4).
 # Author:      Highsteads / CliveS & Claude
 # Date:        25-05-2026
-# Version:     0.1.1-beta
+# Version:     0.1.2-beta
 # Plugin ID:   com.clives.indigoplugin.honeywell-envisalink
 
 import os as _os
@@ -39,7 +39,7 @@ try:
 except ImportError:
     ENVISALINK_PASSWORD = ""
 
-PLUGIN_VERSION = "0.1.1-beta"
+PLUGIN_VERSION = "0.1.2-beta"
 PLUGIN_ID = "com.clives.indigoplugin.honeywell-envisalink"
 
 
@@ -191,6 +191,18 @@ class Plugin(indigo.PluginBase):
         elif dev.deviceTypeId == "zone":
             znum = int(dev.pluginProps.get("zone_number", "0"))
             self.zone_devs.pop(znum, None)
+
+    @staticmethod
+    def didDeviceCommPropertyChange(oldDevice, newDevice):
+        """Restart comm only when identity-defining props change.
+
+        partition_number and zone_number define which physical
+        partition/zone the Indigo device tracks. model and evl_model
+        affect the panel command set / Envisalink dialect. Any change here
+        invalidates the panel/partition/zone routing maps.
+        """
+        keys = ("model", "evl_model", "partition_number", "zone_number")
+        return any(oldDevice.pluginProps.get(k) != newDevice.pluginProps.get(k) for k in keys)
 
     # ── Trigger registration (for custom Events.xml events) ───────────────
 

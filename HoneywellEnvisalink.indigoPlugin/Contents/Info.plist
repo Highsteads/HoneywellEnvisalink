@@ -9,9 +9,9 @@
     <key>CFBundleIdentifier</key>
     <string>com.clives.indigoplugin.honeywell-envisalink</string>
     <key>CFBundleVersion</key>
-    <string>0.1.1-beta</string>
+    <string>0.1.2-beta</string>
     <key>PluginVersion</key>
-    <string>0.1.1-beta</string>
+    <string>0.1.2-beta</string>
     <key>ServerApiVersion</key>
     <string>3.0</string>
     <key>CFBundleName</key>
