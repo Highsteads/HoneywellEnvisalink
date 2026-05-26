@@ -1,6 +1,6 @@
 # HoneywellEnvisalink
 
-> # 🚧 BETA — v0.1.1 — needs beta testers with real hardware
+> # 🚧 BETA — v0.1.4-beta — needs beta testers with real hardware
 >
 > This plugin has **never been tested against an actual Honeywell panel**. The protocol implementation, plugin structure, safety rails and test
 > infrastructure are all in place, and a 59-case automated test suite covers the protocol parser/encoder end to end — but only somebody with a real
@@ -12,6 +12,17 @@
 > If you've got Honeywell hardware and are up for being a beta tester, see [Testing & debugging from afar](#testing--debugging-from-afar) below.
 
 An [Indigo Domotics](https://www.indigodomo.com) plugin that connects **Honeywell Vista alarm panels** to Indigo via an **Envisalink** network module.
+
+## What's new since v0.1.1-beta
+
+The first two releases shipped without anyone (including me) having driven the plugin against any kind of EVL — real or simulated. That changed this week. Wiring it up to the bundled `mock_evl_server.py` for a proper end-to-end run turned up two real bugs and a handful of robustness gaps. All fixed in this release.
+
+- **Login was silently failing** (0.1.4-beta). The password send was being dropped by an over-eager safety check on the public send path. Direct sendall during the login handshake instead. If you tried v0.1.0 or v0.1.1 and it just sat there saying "send dropped — not connected", this is why.
+- **Orphan plugin host processes on restart** (0.1.3-beta). The TPI socket recv loop only woke promptly when the socket was explicitly shut down, but during reconnect backoff there is no socket to shut down. Hardened with a 1-second recv tick so the loop checks the stop event regardless, plus a 60-second stale-connection detector that's independent of the recv timeout. Join timeout reduced to 3 seconds with a warning logged if the worker thread doesn't exit cleanly.
+- **Disconnect callbacks during shutdown suppressed** (0.1.3-beta) — they were calling back into Indigo APIs from a thread mid-shutdown, which is a known way to deadlock the host's own cleanup.
+- **Conventions tidy-up** (0.1.2-beta) — applied Jay's 25-May-2026 plugin-store conventions: leaner startup banner (full diagnostic banner now on demand via Show Plugin Info), README moved to repo root only, LICENSE added.
+
+End-to-end against the mock: connect → login → zone-timer dump → keypad updates → zone trips → arm exit-delay → armed-away → alarm → CID event → reset, with partition and zone Indigo devices taking the correct state at each step.
 
 Fills a long-standing gap: Indigo already has plugins for DSC panels via Envisalink (DSC plugin) and for Honeywell panels via the now-discontinued AD2USB
 serial board (Ademco plugin), but nothing that combines **Honeywell + Envisalink** — until now.
@@ -46,7 +57,7 @@ Alarm panels are not lights — getting it wrong has real consequences. The plug
 
 ## Testing & debugging from afar
 
-I (the author) don't have a Honeywell panel to test against, which is why this is a v0.1.1 explicitly looking for test pilots. To make remote debugging
+I (the author) don't have a Honeywell panel to test against, which is why this is a v0.1.4-beta explicitly looking for test pilots. To make remote debugging
 tractable, the plugin ships with:
 
 ### Built-in diagnostic menu items
