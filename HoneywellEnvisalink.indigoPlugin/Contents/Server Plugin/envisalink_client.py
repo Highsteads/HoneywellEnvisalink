@@ -5,9 +5,9 @@
 #              Handles connect, login, reconnect, line framing, and dispatching
 #              parsed frames to a callback. Debug logging mode dumps every byte
 #              in both directions (with user codes redacted).
-# Author:      Highsteads / CliveS & Claude
-# Date:        24-05-2026
-# Version:     0.1.1
+# Author:      Highsteads / CliveS & Claude Opus 4.7
+# Date:        26-05-2026
+# Version:     0.1.3-beta
 
 import socket
 import threading
@@ -22,11 +22,13 @@ from honeywell_protocol import (
 
 
 DEFAULT_PORT = 4025
-DEFAULT_CONNECT_TIMEOUT_S = 10
-DEFAULT_RECV_TIMEOUT_S = 60       # EVL pings every ~30s, so 60s is a safe inactivity window
+DEFAULT_CONNECT_TIMEOUT_S = 5     # connect blocks the thread (self._sock not yet set), keep it tight
+RECV_SOCKET_TIMEOUT_S = 1.0       # short tick: lets the recv loop wake promptly when _stop_evt flips
+STALE_CONNECTION_S = 60           # EVL pings every ~30s — no traffic for 60s ⇒ treat as stale and reconnect
 DEFAULT_RECONNECT_DELAY_S = 5
 MAX_RECONNECT_DELAY_S = 60
 DEBUG_RING_BUFFER_SIZE = 500      # last N raw lines kept in memory for diagnostics
+THREAD_JOIN_TIMEOUT_S = 3         # shutdown grace period — short, so plugin host exits promptly
 
 
 class EnvisalinkClient:
@@ -100,7 +102,14 @@ class EnvisalinkClient:
         self._thread.start()
 
     def stop(self):
-        """Signal the background thread to exit and close the socket."""
+        """Signal the background thread to exit and close the socket.
+
+        Defensive order: set the stop event FIRST so the recv loop's short-tick
+        wakeup sees it on the next iteration even if the socket-shutdown path
+        below is a no-op (e.g. self._sock is None because we're mid-connect or
+        mid-reconnect-delay). The 1s recv tick plus the event-driven backoff
+        wait means the thread exits within ~1s in the worst case.
+        """
         self._stop_evt.set()
         sock = self._sock
         if sock:
@@ -113,7 +122,13 @@ class EnvisalinkClient:
             except OSError:
                 pass
         if self._thread:
-            self._thread.join(timeout=5)
+            self._thread.join(timeout=THREAD_JOIN_TIMEOUT_S)
+            if self._thread.is_alive():
+                # Daemon thread will die when the process exits, but log this
+                # so future shutdown-stall investigations have a breadcrumb.
+                self._log("warning",
+                          f"client thread still alive after {THREAD_JOIN_TIMEOUT_S}s join — "
+                          "daemon will be reaped at process exit")
 
     def is_connected(self) -> bool:
         return self._connected
@@ -197,7 +212,12 @@ class EnvisalinkClient:
             except Exception as e:
                 self._log("warning", f"connection loop error: {e}")
             self._connected = False
-            self.on_disconnect("loop_exited")
+            # Suppress the disconnect callback when we're stopping — the plugin
+            # is mid-shutdown, calling back into indigo APIs (trigger.execute,
+            # device.updateStateOnServer) from this thread races the host's
+            # cleanup and is the kind of thing that can stall the host exit.
+            if not self._stop_evt.is_set():
+                self.on_disconnect("loop_exited")
             if self._stop_evt.is_set():
                 break
             self._log("info", f"reconnecting in {reconnect_delay}s")
@@ -208,22 +228,30 @@ class EnvisalinkClient:
     def _connect_and_run(self):
         self._log("info", f"connecting to {self.host}:{self.port}")
         sock = socket.create_connection((self.host, self.port), timeout=DEFAULT_CONNECT_TIMEOUT_S)
-        sock.settimeout(DEFAULT_RECV_TIMEOUT_S)
+        sock.settimeout(RECV_SOCKET_TIMEOUT_S)
         self._sock = sock
         self.connect_count += 1
         self.last_connect_ts = time.time()
+        self.last_rx_ts = time.time()  # seed so the stale-connection check has a baseline
 
-        # Receive loop with line buffering
+        # Receive loop with line buffering. The socket timeout is short (1s) so
+        # the loop wakes promptly when _stop_evt flips even if the socket
+        # shutdown path in stop() was a no-op (e.g. self._sock not yet set
+        # because we were mid-connect when stop() ran). Liveness of the
+        # connection itself is tracked separately via last_rx_ts.
         buf = b""
         login_done = False
         while not self._stop_evt.is_set():
             try:
                 chunk = sock.recv(4096)
             except socket.timeout:
-                # No traffic for a while — EVL should be sending keepalives.
-                # Treat as a soft failure and reconnect.
-                self._log("warning", "recv timeout — assuming connection stale")
-                break
+                # Short-tick wakeup — not a connection failure. Loop back to
+                # the stop-event check. Use last_rx_ts to spot a genuinely
+                # stale connection (EVL pings ~every 30s).
+                if time.time() - (self.last_rx_ts or 0) > STALE_CONNECTION_S:
+                    self._log("warning", "no traffic for 60s — assuming connection stale")
+                    break
+                continue
             except OSError as e:
                 self._log("warning", f"recv error: {e}")
                 break

@@ -3,9 +3,9 @@
 # Filename:    plugin.py
 # Description: HoneywellEnvisalink — Indigo plugin connecting Honeywell Vista
 #              alarm panels to Indigo via Envisalink network modules (EVL3/EVL4).
-# Author:      Highsteads / CliveS & Claude
-# Date:        25-05-2026
-# Version:     0.1.2-beta
+# Author:      Highsteads / CliveS & Claude Opus 4.7
+# Date:        26-05-2026
+# Version:     0.1.3-beta
 # Plugin ID:   com.clives.indigoplugin.honeywell-envisalink
 
 import os as _os
@@ -39,7 +39,7 @@ try:
 except ImportError:
     ENVISALINK_PASSWORD = ""
 
-PLUGIN_VERSION = "0.1.2-beta"
+PLUGIN_VERSION = "0.1.3-beta"
 PLUGIN_ID = "com.clives.indigoplugin.honeywell-envisalink"
 
 
