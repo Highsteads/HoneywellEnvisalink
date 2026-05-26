@@ -7,7 +7,7 @@
 #              in both directions (with user codes redacted).
 # Author:      Highsteads / CliveS & Claude Opus 4.7
 # Date:        26-05-2026
-# Version:     0.1.3-beta
+# Version:     0.1.4-beta
 
 import socket
 import threading
@@ -275,8 +275,22 @@ class EnvisalinkClient:
 
                 if not login_done:
                     if text == "Login:":
-                        # EVL is asking for password
-                        self.send_raw(encode_login(self.password))
+                        # EVL is asking for password. Cannot use send_raw() here —
+                        # that path gates on self._connected, which is only set to
+                        # True AFTER the EVL replies "OK", which it can't do until
+                        # we send the password. Direct sendall instead. send_raw()
+                        # stays strict so action-handler sends still refuse if the
+                        # connection isn't fully authenticated.
+                        pwd_line = encode_login(self.password)
+                        with self._send_lock:
+                            try:
+                                sock.sendall(pwd_line.encode("ascii"))
+                            except OSError as e:
+                                self._log("warning", f"login send failed: {e}")
+                                break
+                        self.bytes_tx += len(pwd_line)
+                        self.frames_tx += 1
+                        self._record_debug("TX", pwd_line)
                         continue
                     if text == "OK":
                         login_done = True

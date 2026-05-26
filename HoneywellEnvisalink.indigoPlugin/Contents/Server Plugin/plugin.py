@@ -5,7 +5,7 @@
 #              alarm panels to Indigo via Envisalink network modules (EVL3/EVL4).
 # Author:      Highsteads / CliveS & Claude Opus 4.7
 # Date:        26-05-2026
-# Version:     0.1.3-beta
+# Version:     0.1.4-beta
 # Plugin ID:   com.clives.indigoplugin.honeywell-envisalink
 
 import os as _os
@@ -39,7 +39,7 @@ try:
 except ImportError:
     ENVISALINK_PASSWORD = ""
 
-PLUGIN_VERSION = "0.1.3-beta"
+PLUGIN_VERSION = "0.1.4-beta"
 PLUGIN_ID = "com.clives.indigoplugin.honeywell-envisalink"
 
 
