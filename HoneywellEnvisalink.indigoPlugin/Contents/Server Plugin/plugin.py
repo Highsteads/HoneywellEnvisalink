@@ -4,8 +4,8 @@
 # Description: HoneywellEnvisalink — Indigo plugin connecting Honeywell Vista
 #              alarm panels to Indigo via Envisalink network modules (EVL3/EVL4).
 # Author:      Highsteads / CliveS & Claude Opus 4.7
-# Date:        26-05-2026
-# Version:     0.1.4-beta
+# Date:        27-05-2026
+# Version:     0.1.5-beta
 # Plugin ID:   com.clives.indigoplugin.honeywell-envisalink
 
 import os as _os
@@ -99,6 +99,29 @@ class Plugin(indigo.PluginBase):
         if self.client:
             self.client.stop()
             self.client = None
+
+    # ── Mac sleep / wake — close TCP socket to EVL cleanly on sleep so the
+    # ── board doesn't hold our previous session, then reconnect on wake.
+    # ── Mirrors startup() guards so a blank-config state doesn't loop-retry.
+    def prepare_to_sleep(self):
+        self.logger.info("Mac going to sleep — disconnecting from Envisalink")
+        if self.client:
+            self.client.stop()
+            self.client = None
+        super().prepare_to_sleep()
+    prepareToSleep = prepare_to_sleep
+
+    def wake_up(self):
+        self.logger.info("Mac woke — reconnecting to Envisalink")
+        super().wake_up()
+        if self.host and self.password:
+            self._start_client()
+        else:
+            self.logger.info(
+                "EVL not configured — staying disconnected. Open Plugins → "
+                "HoneywellEnvisalink → Configure to set host/password."
+            )
+    wakeUp = wake_up
 
     def _start_client(self):
         if self.client:
