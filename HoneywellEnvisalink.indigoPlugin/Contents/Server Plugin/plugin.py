@@ -39,7 +39,7 @@ try:
 except ImportError:
     ENVISALINK_PASSWORD = ""
 
-PLUGIN_VERSION = "0.1.4-beta"
+PLUGIN_VERSION = "0.1.5-beta"
 PLUGIN_ID = "com.clives.indigoplugin.honeywell-envisalink"
 
 
