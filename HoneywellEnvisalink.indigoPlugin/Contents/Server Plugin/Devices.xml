@@ -37,7 +37,7 @@
                 <TriggerLabel>Connected</TriggerLabel>
                 <ControlPageLabel>Connected</ControlPageLabel>
             </State>
-            <State id="last_cid">
+            <State id="lastCid">
                 <ValueType>String</ValueType>
                 <TriggerLabel>Last CID event</TriggerLabel>
                 <ControlPageLabel>Last CID</ControlPageLabel>
@@ -86,11 +86,11 @@
             <State id="ready">    <ValueType>Boolean</ValueType><TriggerLabel>Ready</TriggerLabel><ControlPageLabel>Ready</ControlPageLabel></State>
             <State id="trouble">  <ValueType>Boolean</ValueType><TriggerLabel>Trouble</TriggerLabel><ControlPageLabel>Trouble</ControlPageLabel></State>
             <State id="bypass">   <ValueType>Boolean</ValueType><TriggerLabel>Bypass</TriggerLabel><ControlPageLabel>Bypass</ControlPageLabel></State>
-            <State id="ac_power"> <ValueType>Boolean</ValueType><TriggerLabel>AC Power</TriggerLabel><ControlPageLabel>AC Power</ControlPageLabel></State>
+            <State id="acPower"> <ValueType>Boolean</ValueType><TriggerLabel>AC Power</TriggerLabel><ControlPageLabel>AC Power</ControlPageLabel></State>
             <State id="chime">    <ValueType>Boolean</ValueType><TriggerLabel>Chime</TriggerLabel><ControlPageLabel>Chime</ControlPageLabel></State>
             <State id="alarm">    <ValueType>Boolean</ValueType><TriggerLabel>ALARM</TriggerLabel><ControlPageLabel>ALARM</ControlPageLabel></State>
-            <State id="led_bitmap"><ValueType>String</ValueType><TriggerLabel>LED bitmap</TriggerLabel><ControlPageLabel>LEDs</ControlPageLabel></State>
-            <State id="beep_code"><ValueType>Integer</ValueType><TriggerLabel>Beep code</TriggerLabel><ControlPageLabel>Beep</ControlPageLabel></State>
+            <State id="ledBitmap"><ValueType>String</ValueType><TriggerLabel>LED bitmap</TriggerLabel><ControlPageLabel>LEDs</ControlPageLabel></State>
+            <State id="beepCode"><ValueType>Integer</ValueType><TriggerLabel>Beep code</TriggerLabel><ControlPageLabel>Beep</ControlPageLabel></State>
         </States>
         <UiDisplayStateId>state</UiDisplayStateId>
     </Device>
@@ -122,7 +122,7 @@
             </Field>
         </ConfigUI>
         <States>
-            <State id="zone_state">
+            <State id="zoneState">
                 <ValueType>
                     <List>
                         <Option value="unknown">Unknown</Option>
@@ -137,7 +137,7 @@
                 <ControlPageLabel>State</ControlPageLabel>
             </State>
         </States>
-        <UiDisplayStateId>zone_state</UiDisplayStateId>
+        <UiDisplayStateId>zoneState</UiDisplayStateId>
     </Device>
 
 </Devices>

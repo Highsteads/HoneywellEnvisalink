@@ -4,8 +4,8 @@
 # Description: HoneywellEnvisalink — Indigo plugin connecting Honeywell Vista
 #              alarm panels to Indigo via Envisalink network modules (EVL3/EVL4).
 # Author:      Highsteads / CliveS & Claude Opus 4.7
-# Date:        27-05-2026
-# Version:     0.1.5-beta
+# Date:        29-05-2026
+# Version:     0.1.6-beta
 # Plugin ID:   com.clives.indigoplugin.honeywell-envisalink
 
 import os as _os
@@ -39,7 +39,7 @@ try:
 except ImportError:
     ENVISALINK_PASSWORD = ""
 
-PLUGIN_VERSION = "0.1.5-beta"
+PLUGIN_VERSION = "0.1.6-beta"
 PLUGIN_ID = "com.clives.indigoplugin.honeywell-envisalink"
 
 
@@ -288,12 +288,12 @@ class Plugin(indigo.PluginBase):
             {"key": "ready",         "value": ku.ready},
             {"key": "trouble",       "value": ku.trouble},
             {"key": "bypass",        "value": ku.bypass},
-            {"key": "ac_power",      "value": ku.ac_power},
+            {"key": "acPower",       "value": ku.ac_power},
             {"key": "chime",         "value": ku.chime},
             {"key": "alarm",         "value": ku.alarm},
             {"key": "state",         "value": derived.value},
-            {"key": "led_bitmap",    "value": f"0x{ku.led_bitmap:02X}"},
-            {"key": "beep_code",     "value": ku.beep_code},
+            {"key": "ledBitmap",     "value": f"0x{ku.led_bitmap:02X}"},
+            {"key": "beepCode",      "value": ku.beep_code},
         ])
         if ku.alarm:
             self._fire_event("alarm_triggered", partition=ku.partition)
@@ -308,7 +308,7 @@ class Plugin(indigo.PluginBase):
         on = zsc.state in (ZoneState.OPEN, ZoneState.ALARM, ZoneState.TROUBLE)
         dev.updateStatesOnServer([
             {"key": "onOffState", "value": on},
-            {"key": "zone_state", "value": zsc.state.value},
+            {"key": "zoneState", "value": zsc.state.value},
         ])
 
     def _handle_partition_state(self, psc: PartitionStateChange):
@@ -334,7 +334,7 @@ class Plugin(indigo.PluginBase):
         )
         if self.panel_dev:
             self.panel_dev.updateStateOnServer(
-                "last_cid",
+                "lastCid",
                 value=f"{cid.qualifier}{cid.event_code:03d}/P{cid.partition}/{cid.zone_or_user}"
             )
 
