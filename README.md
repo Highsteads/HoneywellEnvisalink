@@ -105,7 +105,7 @@ Scenarios: `default` (zone trips, arm/disarm, simulated alarm), `ready_only` (ju
 ### `IndigoSecrets.py` (optional)
 If you keep secrets in the canonical `/Library/Application Support/Perceptive Automation/IndigoSecrets.py` file, set `ENVISALINK_PASSWORD = "..."` there
 and the plugin will use it in preference to whatever's in PluginConfig. This is just my personal convention — completely optional, the PluginConfig field
-works fine on its own.
+works fine on its own. To create that file, copy `IndigoSecrets_example.py` (shipped with the CliveS plugins) into `/Library/Application Support/Perceptive Automation/` and rename the copy to `IndigoSecrets.py`.
 
 ## How was this built?
 
