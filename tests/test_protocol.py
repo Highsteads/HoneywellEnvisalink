@@ -20,8 +20,7 @@ from honeywell_protocol import (
     encode_login, encode_keystrokes, encode_disarm, encode_arm_away,
     encode_arm_stay, encode_bypass_zone, encode_dump_zone_timers,
     redact_line_for_log,
-    KeypadUpdate, ZoneState, PartitionState, RawFrame,
-    LED_ARMED, LED_READY, LED_BYPASS, LED_TROUBLE, LED_AC_POWER, LED_ALARM,
+    KeypadUpdate, ZoneState, PartitionState, LED_ARMED, LED_READY, LED_BYPASS, LED_AC_POWER, LED_ALARM,
     ProtocolError, ChecksumError,
 )
 

@@ -30,7 +30,7 @@ PLUGIN_SRC = Path(__file__).parent.parent / "HoneywellEnvisalink.indigoPlugin" /
 sys.path.insert(0, str(PLUGIN_SRC))
 
 from honeywell_protocol import (
-    tpi_checksum, LED_ARMED, LED_READY, LED_BYPASS, LED_AC_POWER, LED_ALARM,
+    tpi_checksum, LED_ARMED, LED_READY, LED_AC_POWER, LED_ALARM,
 )
 
 
@@ -102,7 +102,7 @@ class MockEVL:
             print(f"[mock_evl] bad password: {pw!r}")
             return
         sock.sendall(b"OK\r\n")
-        print(f"[mock_evl] login OK")
+        print("[mock_evl] login OK")
 
         # Start sending the scenario
         try:
