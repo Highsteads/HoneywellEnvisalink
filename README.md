@@ -116,14 +116,6 @@ works fine on its own. To create that file, copy `IndigoSecrets_example.py` (shi
   - The existing Indigo DSC plugin (for overall plugin structure and Envisalink transport patterns)
   - The Indigo AD2USB plugin (for the Honeywell keystroke protocol — same panel-side protocol, just over USB)
 
-## License
-
-MIT — see [LICENSE](LICENSE). Use it, fork it, butcher it.
-
-## Author
-
-[Highsteads](https://github.com/Highsteads) / CliveS
-
 ## Reporting issues
 
 Easiest way to get hold of me is via the **[Indigo forum](https://forums.indigodomo.com/)** — either reply in the relevant thread, start a new one, or
@@ -134,3 +126,9 @@ send me a DM (forum user **CliveS**). Please include:
 - What you were doing and what happened
 - If something went sideways, attach the output of the **Plugins → HoneywellEnvisalink → Save diagnostic bundle** menu item — it's a JSON file written to
   `/tmp/`, safe to share verbatim (contains no password and no user codes)
+
+## Authors & licence
+
+Vibed into existence by **CliveS**, who knew what he wanted, argued until he got it, and tested it on a real house. Typed at inhuman speed by **Claude** (Anthropic), who mostly did as it was told.
+
+© 2026 CliveS · [MIT licence](LICENSE) — copy it, fork it, bend it, break it, fix it, ship it. If it breaks, you get to keep both pieces.
