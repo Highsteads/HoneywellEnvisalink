@@ -18,9 +18,11 @@ from honeywell_protocol import (
     parse_frame, parse_keypad_update, parse_zone_state, parse_partition_state,
     parse_realtime_cid, derive_partition_state,
     encode_login, encode_keystrokes, encode_disarm, encode_arm_away,
-    encode_arm_stay, encode_bypass_zone, encode_dump_zone_timers,
+    encode_arm_stay, encode_arm_instant, encode_arm_max, encode_bypass_zone,
+    encode_dump_zone_timers,
     redact_line_for_log,
-    KeypadUpdate, ZoneState, PartitionState, LED_ARMED, LED_READY, LED_BYPASS, LED_AC_POWER, LED_ALARM,
+    KeypadUpdate, ZoneState, PartitionState,
+    LED_ARMED, LED_READY, LED_TROUBLE, LED_BYPASS, LED_AC_POWER, LED_ALARM, LED_ALARM_OCCURRED,
     ProtocolError, ChecksumError,
 )
 
@@ -109,6 +111,15 @@ class TestParseFrame:
         assert f.code == "00"
         assert f.payload.startswith("1,02,000,00,ARMED")
 
+    def test_bad_checksum_through_parse_frame_raises(self):
+        # A real frame with a corrupted checksum must raise ChecksumError when
+        # verification is on (the default for live traffic).
+        payload = "01,007,O"
+        good = "%" + payload + tpi_checksum(payload)
+        bad = good[:-2] + "ZZ"   # clobber the trailing checksum
+        with pytest.raises(ChecksumError):
+            parse_frame(bad)
+
 
 # ────────────────────────────────────────────────────────────────────────────
 # Keypad update parsing
@@ -160,9 +171,24 @@ class TestKeypadUpdate:
         line = "%" + payload + tpi_checksum(payload)
         assert parse_keypad_update(parse_frame(line)) is None
 
-    def test_malformed_raises(self):
-        # Too few fields
+    def test_short_00_frame_returns_none(self):
+        # TPI code "00" is overloaded (keypad update AND keep-alive). A short
+        # "00" frame (too few fields to be a keypad update) must return None —
+        # treated as an uninteresting keep-alive — NOT raise, so it doesn't spam
+        # "frame handler error" warnings on real hardware.
         payload = "00,1,02"
+        line = "%" + payload + tpi_checksum(payload)
+        assert parse_keypad_update(parse_frame(line)) is None
+
+    def test_bare_00_keepalive_returns_none(self):
+        payload = "00,"
+        line = "%" + payload + tpi_checksum(payload)
+        assert parse_keypad_update(parse_frame(line)) is None
+
+    def test_non_hex_led_raises(self):
+        # A 5-field "00" frame with a non-hex LED byte is a genuinely malformed
+        # keypad update and must still raise.
+        payload = "00,1,ZZ,000,0,Ready"
         line = "%" + payload + tpi_checksum(payload)
         with pytest.raises(ProtocolError):
             parse_keypad_update(parse_frame(line))
@@ -195,6 +221,18 @@ class TestZoneState:
         zsc = parse_zone_state(parse_frame(line))
         assert zsc.zone == 142
 
+    def test_high_zone_number(self):
+        payload = "01,250,O"   # Vista 250BP max zone
+        line = "%" + payload + tpi_checksum(payload)
+        zsc = parse_zone_state(parse_frame(line))
+        assert zsc.zone == 250
+
+    def test_non_numeric_zone_raises(self):
+        payload = "01,ABC,O"
+        line = "%" + payload + tpi_checksum(payload)
+        with pytest.raises(ProtocolError):
+            parse_zone_state(parse_frame(line))
+
 
 # ────────────────────────────────────────────────────────────────────────────
 # Partition state parsing
@@ -220,6 +258,20 @@ class TestPartitionState:
         psc = parse_partition_state(parse_frame(line))
         assert psc.partition == 1
         assert psc.state == expected
+
+    @pytest.mark.parametrize("partition", [1, 2, 3])
+    def test_multi_partition(self, partition):
+        payload = f"02,{partition},ARMED_AWAY"
+        line = "%" + payload + tpi_checksum(payload)
+        psc = parse_partition_state(parse_frame(line))
+        assert psc.partition == partition
+        assert psc.state == PartitionState.ARMED_AWAY
+
+    def test_non_numeric_partition_raises(self):
+        payload = "02,X,READY"
+        line = "%" + payload + tpi_checksum(payload)
+        with pytest.raises(ProtocolError):
+            parse_partition_state(parse_frame(line))
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -251,14 +303,41 @@ class TestDerivedState:
         ku = KeypadUpdate(1, LED_ALARM | LED_ARMED, 0, 1, "ALARM                            ")
         assert derive_partition_state(ku) == PartitionState.ALARM
 
+    def test_armed_max(self):
+        ku = KeypadUpdate(1, LED_ARMED, 0, 0, "ARMED ***MAXIMUM***              ")
+        assert derive_partition_state(ku) == PartitionState.ARMED_MAX
+
+    def test_armed_stay_not_misread_as_max(self):
+        # Regression: the old code matched a bare "MAX" substring before "STAY".
+        ku = KeypadUpdate(1, LED_ARMED, 0, 0, "ARMED ***STAY***                 ")
+        assert derive_partition_state(ku) == PartitionState.ARMED_STAY
+
+    def test_alarm_memory_from_led_bit(self):
+        # LED_ALARM_OCCURRED (0x40) alone, no live alarm, no text — should derive
+        # ALARM_MEMORY (regression: that LED bit used to be defined but never read).
+        ku = KeypadUpdate(1, LED_ALARM_OCCURRED | LED_READY, 0, 0, "Ready                  ")
+        assert derive_partition_state(ku) == PartitionState.ALARM_MEMORY
+
+    def test_entry_delay(self):
+        ku = KeypadUpdate(1, LED_ARMED, 0, 1, "DISARM SYSTEM OR ALARM           ")
+        assert derive_partition_state(ku) == PartitionState.ENTRY_DELAY
+
+    def test_trouble(self):
+        ku = KeypadUpdate(1, LED_TROUBLE, 0, 0, "Check 03                         ")
+        assert derive_partition_state(ku) == PartitionState.TROUBLE
+
+    def test_not_ready(self):
+        ku = KeypadUpdate(1, 0x00, 0, 0, "Not Ready Fault 02               ")
+        assert derive_partition_state(ku) == PartitionState.NOT_READY
+
 
 # ────────────────────────────────────────────────────────────────────────────
 # Real-time CID
 # ────────────────────────────────────────────────────────────────────────────
 
 class TestRealtimeCID:
-    def test_burglary(self):
-        # Qualifier=1 (new), code=130 (burglary), partition=01, zone=0007
+    def test_burglary_concatenated(self):
+        # Concatenated form: Qualifier=1 (new), code=130, partition=01, zone=0007
         payload = "03,1130010007"
         line = "%" + payload + tpi_checksum(payload)
         cid = parse_realtime_cid(parse_frame(line))
@@ -266,6 +345,33 @@ class TestRealtimeCID:
         assert cid.event_code == 130
         assert cid.partition == 1
         assert cid.zone_or_user == 7
+
+    def test_burglary_comma_form(self):
+        # Comma-delimited firmware variant: Q,XXX,PP,ZZZZ
+        payload = "03,1,130,01,0007"
+        line = "%" + payload + tpi_checksum(payload)
+        cid = parse_realtime_cid(parse_frame(line))
+        assert cid.qualifier == 1
+        assert cid.event_code == 130
+        assert cid.partition == 1
+        assert cid.zone_or_user == 7
+
+    def test_comma_form_unpadded_fields(self):
+        # Regression: comma-stripping + fixed slicing mis-attributed un-padded
+        # fields. Positional comma-split must read them correctly.
+        payload = "03,3,401,1,42"   # qualifier 3 (restore), user/installer code 401, partition 1, user 42
+        line = "%" + payload + tpi_checksum(payload)
+        cid = parse_realtime_cid(parse_frame(line))
+        assert cid.qualifier == 3
+        assert cid.event_code == 401
+        assert cid.partition == 1
+        assert cid.zone_or_user == 42
+
+    def test_short_cid_raises(self):
+        payload = "03,12"
+        line = "%" + payload + tpi_checksum(payload)
+        with pytest.raises(ProtocolError):
+            parse_realtime_cid(parse_frame(line))
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -310,6 +416,20 @@ class TestEncoding:
         with pytest.raises(ValueError):
             encode_bypass_zone("1234", zone=999)
 
+    def test_arm_instant_and_max_helpers(self):
+        # Instant key = '7', Max key = '4' appended to the code
+        assert parse_frame(encode_arm_instant("1234", 1).rstrip("\r\n")).payload == "112347"
+        assert parse_frame(encode_arm_max("1234", 1).rstrip("\r\n")).payload == "112344"
+
+    def test_six_digit_code_encodes(self):
+        f = parse_frame(encode_disarm("123456", partition=1).rstrip("\r\n"))
+        assert f.payload == "11234561"   # partition 1 + code 123456 + disarm key 1
+
+    def test_multi_partition_keystrokes(self):
+        for p in (1, 2, 3):
+            f = parse_frame(encode_arm_away("1234", partition=p).rstrip("\r\n"))
+            assert f.payload == f"{p}12342"
+
     def test_dump_zone_timers(self):
         line = encode_dump_zone_timers()
         f = parse_frame(line.rstrip("\r\n"))
@@ -338,3 +458,22 @@ class TestRedaction:
         # Zone-timer dump has lots of digits — must not be mangled
         line = "%FF,000000000000FF"
         assert redact_line_for_log(line) == line
+
+    def test_bypass_command_code_redacted(self):
+        # ^00,P<code>6<zone> — the user code must be masked
+        line = encode_bypass_zone("1234", zone=5).rstrip("\r\n")
+        out = redact_line_for_log(line)
+        assert "1234" not in out
+        assert "****" in out
+
+    def test_multi_partition_code_redacted(self):
+        line = encode_arm_away("123456", partition=3).rstrip("\r\n")
+        out = redact_line_for_log(line)
+        assert "123456" not in out
+
+    def test_bare_line_passes_through(self):
+        # redact_line_for_log only masks ^00 keystroke codes; a bare login line
+        # is NOT its job — that is masked at source in envisalink_client (see
+        # test_client.py). Confirm it is left untouched here so the client's
+        # direction-aware handling is the single source of truth.
+        assert redact_line_for_log("user") == "user"

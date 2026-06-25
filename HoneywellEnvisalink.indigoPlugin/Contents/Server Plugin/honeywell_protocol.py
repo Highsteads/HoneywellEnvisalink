@@ -4,9 +4,9 @@
 # Description: Pure-Python parser/encoder for the Envisalink TPI Honeywell protocol.
 #              No I/O — TCP transport lives in envisalink_client.py.
 #              Pure functions for easy testing with mock data.
-# Author:      Highsteads / CliveS & Claude
-# Date:        24-05-2026
-# Version:     0.1.1
+# Author:      Highsteads / CliveS & Claude Opus 4.8
+# Date:        25-06-2026
+# Version:     0.2.0-beta
 #
 # References used to build this:
 #   - Eyez-On Envisalink TPI specification (Honeywell)
@@ -23,6 +23,7 @@
 #
 # Compatibility notes are inline as we encounter model-specific quirks.
 
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
@@ -123,22 +124,24 @@ class KeypadUpdate:
     display_text: str       # 32-char display contents
 
     # Derived
-    armed:    bool = field(init=False)
-    ready:    bool = field(init=False)
-    trouble:  bool = field(init=False)
-    bypass:   bool = field(init=False)
-    ac_power: bool = field(init=False)
-    chime:    bool = field(init=False)
-    alarm:    bool = field(init=False)
+    armed:          bool = field(init=False)
+    ready:          bool = field(init=False)
+    trouble:        bool = field(init=False)
+    bypass:         bool = field(init=False)
+    ac_power:       bool = field(init=False)
+    chime:          bool = field(init=False)
+    alarm:          bool = field(init=False)
+    alarm_occurred: bool = field(init=False)   # 0x40 — alarm in memory (occurred, now cleared)
 
     def __post_init__(self):
-        self.armed    = bool(self.led_bitmap & LED_ARMED)
-        self.ready    = bool(self.led_bitmap & LED_READY)
-        self.trouble  = bool(self.led_bitmap & LED_TROUBLE)
-        self.bypass   = bool(self.led_bitmap & LED_BYPASS)
-        self.ac_power = bool(self.led_bitmap & LED_AC_POWER)
-        self.chime    = bool(self.led_bitmap & LED_CHIME)
-        self.alarm    = bool(self.led_bitmap & LED_ALARM)
+        self.armed          = bool(self.led_bitmap & LED_ARMED)
+        self.ready          = bool(self.led_bitmap & LED_READY)
+        self.trouble        = bool(self.led_bitmap & LED_TROUBLE)
+        self.bypass         = bool(self.led_bitmap & LED_BYPASS)
+        self.ac_power       = bool(self.led_bitmap & LED_AC_POWER)
+        self.chime          = bool(self.led_bitmap & LED_CHIME)
+        self.alarm          = bool(self.led_bitmap & LED_ALARM)
+        self.alarm_occurred = bool(self.led_bitmap & LED_ALARM_OCCURRED)
 
 
 @dataclass
@@ -289,7 +292,11 @@ def parse_keypad_update(frame: RawFrame) -> Optional[KeypadUpdate]:
         return None
     parts = frame.payload.split(",", 4)
     if len(parts) < 5:
-        raise ProtocolError(f"keypad update has only {len(parts)} fields: {frame.payload!r}")
+        # TPI code "00" is overloaded: a full keypad update has 5 fields, but the
+        # EVL also sends short "00" keep-alive frames. Return None (not interesting)
+        # rather than raising so a keep-alive falls through the dispatch chain
+        # quietly instead of spamming "frame handler error" warnings on real kit.
+        return None
     try:
         partition = int(parts[0])
         led       = int(parts[1], 16)
@@ -368,18 +375,32 @@ def parse_realtime_cid(frame: RawFrame) -> Optional[RealtimeCIDEvent]:
     """
     if frame.code != TPI_REALTIME_CID_EVENT:
         return None
-    p = frame.payload.replace(",", "")
-    if len(p) < 9:
-        raise ProtocolError(f"CID event too short: {frame.payload!r}")
+    # Two firmware variants: a comma-delimited form (Q,XXX,PP,ZZZZ) and a
+    # concatenated form (QXXXPPZZZZ). For the comma form, split positionally —
+    # comma-stripping then fixed-offset slicing mis-attributes partition/zone
+    # whenever a field is not exactly the documented width (e.g. a 1-digit
+    # partition or 3-digit user shifts every later slice).
+    fields = [f for f in frame.payload.split(",") if f != ""]
     try:
-        return RealtimeCIDEvent(
-            qualifier=int(p[0]),
-            event_code=int(p[1:4]),
-            partition=int(p[4:6]),
-            zone_or_user=int(p[6:10]) if len(p) >= 10 else int(p[6:9]),
-        )
+        if len(fields) >= 4:
+            qualifier    = int(fields[0])
+            event_code   = int(fields[1])
+            partition    = int(fields[2])
+            zone_or_user = int(fields[3])
+        else:
+            p = frame.payload.replace(",", "")
+            if len(p) < 9:
+                raise ProtocolError(f"CID event too short: {frame.payload!r}")
+            qualifier    = int(p[0])
+            event_code   = int(p[1:4])
+            partition    = int(p[4:6])
+            zone_or_user = int(p[6:10]) if len(p) >= 10 else int(p[6:9])
     except ValueError as e:
         raise ProtocolError(f"CID field parse error: {e}") from e
+    return RealtimeCIDEvent(
+        qualifier=qualifier, event_code=event_code,
+        partition=partition, zone_or_user=zone_or_user,
+    )
 
 
 def derive_partition_state(ku: KeypadUpdate) -> PartitionState:
@@ -391,16 +412,19 @@ def derive_partition_state(ku: KeypadUpdate) -> PartitionState:
     text = ku.display_text.upper()
     if ku.alarm:
         return PartitionState.ALARM
-    if "ALARM MEMORY" in text:
+    if ku.alarm_occurred or "ALARM MEMORY" in text:
         return PartitionState.ALARM_MEMORY
     if "MAY EXIT NOW" in text or "EXIT NOW" in text:
         return PartitionState.EXIT_DELAY
     if "DISARM SYSTEM OR ALARM" in text or "ENTRY" in text:
         return PartitionState.ENTRY_DELAY
     if ku.armed:
+        # Order matters, but each token is now unambiguous: "INSTANT", "MAXIMUM"
+        # and "STAY" never appear as substrings of one another. (The old bare
+        # "MAX" test could in principle match other text — dropped.)
         if "INSTANT" in text:
             return PartitionState.ARMED_INSTANT
-        if "MAXIMUM" in text or "MAX" in text:
+        if "MAXIMUM" in text:
             return PartitionState.ARMED_MAX
         if "STAY" in text:
             return PartitionState.ARMED_STAY
@@ -476,8 +500,12 @@ def encode_bypass_zone(code: str, zone: int, partition: int = 1) -> str:
 # Secrets redaction — never log user codes
 # ─────────────────────────────────────────────────────────────────────────────
 
-import re as _re
-_CODE_PATTERN = _re.compile(r"(\^00,\d)(\d{4,6})")
+# Matches the user-code digits in an outgoing keystroke command (^00,P<code>…).
+# The digit run is greedy and deliberately wide (3-8) so we over-mask rather than
+# under-mask if the code length ever changes. NB this only covers keystroke
+# commands — a bare login password is masked at source in envisalink_client.py
+# (the recv-loop login branch), never recorded through this path.
+_CODE_PATTERN = re.compile(r"(\^00,\d)(\d{3,8})")
 
 def redact_line_for_log(line: str) -> str:
     """

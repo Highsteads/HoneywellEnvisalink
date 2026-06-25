@@ -6,7 +6,7 @@
     </Field>
 
     <Field id="beta_warning" type="label" fontColor="red">
-        <Label>⚠ BETA SOFTWARE (v0.1.1) — has not been tested against real Honeywell hardware. Leave "Test mode" ON until you have verified state-reading works. Report any issues on the Indigo forum (user: CliveS).</Label>
+        <Label>⚠ BETA SOFTWARE — has not been tested against real Honeywell hardware. Leave "Test mode" ON until you have verified state-reading works. Report any issues on the Indigo forum (user: CliveS).</Label>
     </Field>
 
     <Field id="sep1" type="separator"/>

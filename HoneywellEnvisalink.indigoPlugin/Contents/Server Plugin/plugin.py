@@ -3,9 +3,9 @@
 # Filename:    plugin.py
 # Description: HoneywellEnvisalink — Indigo plugin connecting Honeywell Vista
 #              alarm panels to Indigo via Envisalink network modules (EVL3/EVL4).
-# Author:      Highsteads / CliveS & Claude Opus 4.7
-# Date:        29-05-2026
-# Version:     0.1.6-beta
+# Author:      Highsteads / CliveS & Claude Opus 4.8
+# Date:        25-06-2026
+# Version:     0.2.0-beta
 # Plugin ID:   com.clives.indigoplugin.honeywell-envisalink
 
 import os as _os
@@ -14,6 +14,7 @@ _sys.path.insert(0, _os.getcwd())
 
 import indigo
 import json
+import logging
 import time
 
 from honeywell_protocol import (
@@ -39,8 +40,39 @@ try:
 except ImportError:
     ENVISALINK_PASSWORD = ""
 
-PLUGIN_VERSION = "0.1.6-beta"
+PLUGIN_VERSION = "0.2.0-beta"
 PLUGIN_ID = "com.clives.indigoplugin.honeywell-envisalink"
+
+DEFAULT_PORT = 4025
+
+
+def _as_bool(value, default=False):
+    """Coerce a pluginPrefs/valuesDict value to a real bool.
+
+    Indigo checkbox fields normally round-trip as Python bools, but a value that
+    has ever been serialised as the string "true"/"false" (or is blank) would be
+    truthy/ambiguous under a bare `if value:`. This normalises both forms.
+    """
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, str):
+        v = value.strip().lower()
+        if v in ("true", "1", "yes", "on"):
+            return True
+        if v in ("false", "0", "no", "off", ""):
+            return False
+    return bool(value)
+
+
+def _as_port(value, default=DEFAULT_PORT):
+    """Coerce a port pref to a valid int, falling back safely on blank/bad input."""
+    try:
+        port = int(str(value).strip())
+    except (ValueError, TypeError, AttributeError):
+        return default
+    return port if 1 <= port <= 65535 else default
 
 
 class Plugin(indigo.PluginBase):
@@ -48,16 +80,18 @@ class Plugin(indigo.PluginBase):
     def __init__(self, pluginId, pluginDisplayName, pluginVersion, pluginPrefs):
         indigo.PluginBase.__init__(self, pluginId, pluginDisplayName, pluginVersion, pluginPrefs)
 
-        # Lifted from PluginConfig
+        # Lifted from PluginConfig. Coerce defensively — a textfield cleared in the
+        # config dialog comes back as "" (not the .get default), so int("") would
+        # raise ValueError here in __init__ and abort the whole plugin.
         self.host = pluginPrefs.get("host", "")
-        self.port = int(pluginPrefs.get("port", "4025"))
+        self.port = _as_port(pluginPrefs.get("port", DEFAULT_PORT))
         # Password: IndigoSecrets > PluginConfig > error
         self.password = ENVISALINK_PASSWORD or pluginPrefs.get("password", "")
         # SAFETY: test_mode prevents real arm/disarm commands from leaving Indigo.
         # Defaults TRUE so a fresh install can't accidentally do something destructive.
-        self.test_mode = pluginPrefs.get("test_mode", True)
-        self.debug_protocol = pluginPrefs.get("debug_protocol", False)
-        self.debug_logging = pluginPrefs.get("debug_logging", False)
+        self.test_mode = _as_bool(pluginPrefs.get("test_mode", True), default=True)
+        self.debug_protocol = _as_bool(pluginPrefs.get("debug_protocol", False))
+        self.debug_logging = _as_bool(pluginPrefs.get("debug_logging", False))
 
         self.debug = self.debug_logging   # Indigo's base class uses self.debug
 
@@ -65,6 +99,7 @@ class Plugin(indigo.PluginBase):
         self.panel_dev = None
         self.partition_devs = {}   # partition_number → indigo.device
         self.zone_devs = {}        # zone_number → indigo.device
+        self.partition_last_event = {}   # partition → last fired event id (de-spam)
 
         # Triggers registered by users for our custom events
         self.event_triggers = {}
@@ -139,16 +174,30 @@ class Plugin(indigo.PluginBase):
         self.client.start()
         self.logger.info(f"started EVL client → {self.host}:{self.port}")
 
+    def validatePrefsConfigUi(self, valuesDict):
+        errs = indigo.Dict()
+        port = (valuesDict.get("port") or "").strip()
+        if port:
+            try:
+                p = int(port)
+                if not (1 <= p <= 65535):
+                    raise ValueError
+            except (ValueError, TypeError):
+                errs["port"] = "Port must be a whole number between 1 and 65535 (default 4025)."
+        if errs:
+            return (False, valuesDict, errs)
+        return (True, valuesDict)
+
     def closedPrefsConfigUi(self, valuesDict, userCancelled):
         if userCancelled:
             return
-        # Pick up changes
+        # Pick up changes (coerce defensively — see __init__)
         self.host = valuesDict.get("host", "")
-        self.port = int(valuesDict.get("port", "4025"))
+        self.port = _as_port(valuesDict.get("port", DEFAULT_PORT))
         self.password = ENVISALINK_PASSWORD or valuesDict.get("password", "")
-        self.test_mode = valuesDict.get("test_mode", True)
-        self.debug_protocol = valuesDict.get("debug_protocol", False)
-        self.debug_logging = valuesDict.get("debug_logging", False)
+        self.test_mode = _as_bool(valuesDict.get("test_mode", True), default=True)
+        self.debug_protocol = _as_bool(valuesDict.get("debug_protocol", False))
+        self.debug_logging = _as_bool(valuesDict.get("debug_logging", False))
         self.debug = self.debug_logging
 
         # Guard: same checks as startup() — don't kick off a connection loop
@@ -201,10 +250,17 @@ class Plugin(indigo.PluginBase):
         if dev.deviceTypeId == "panel":
             self.panel_dev = None
         elif dev.deviceTypeId == "partition":
-            pnum = int(dev.pluginProps.get("partition_number", "1"))
+            try:
+                pnum = int(dev.pluginProps.get("partition_number", "1"))
+            except (ValueError, TypeError):
+                return
             self.partition_devs.pop(pnum, None)
+            self.partition_last_event.pop(pnum, None)
         elif dev.deviceTypeId == "zone":
-            znum = int(dev.pluginProps.get("zone_number", "0"))
+            try:
+                znum = int(dev.pluginProps.get("zone_number", "0"))
+            except (ValueError, TypeError):
+                return
             self.zone_devs.pop(znum, None)
 
     @staticmethod
@@ -227,10 +283,35 @@ class Plugin(indigo.PluginBase):
     def triggerStopProcessing(self, trigger):
         self.event_triggers.pop(trigger.id, None)
 
-    def _fire_event(self, event_id, **context):
+    def _fire_event(self, event_id):
+        # indigo.trigger.execute carries no payload, so per-partition context
+        # cannot ride on the event itself — trigger scripts that need to know
+        # which partition fired should read the partition device's state.
         for trig in self.event_triggers.values():
             if trig.pluginTypeId == event_id:
                 indigo.trigger.execute(trig)
+
+    # Map a high-level partition state to the custom event it should fire.
+    _PARTITION_EVENTS = {
+        PartitionState.ALARM:         "alarm_triggered",
+        PartitionState.ARMED_AWAY:    "armed_away",
+        PartitionState.ARMED_STAY:    "armed_stay",
+        PartitionState.ARMED_INSTANT: "armed_instant",
+        PartitionState.ARMED_MAX:     "armed_max",
+        PartitionState.READY:         "disarmed",
+        PartitionState.NOT_READY:     "disarmed",
+    }
+
+    def _emit_partition_events(self, partition, state):
+        """Fire the custom event for a partition state, but only when the resolved
+        event CHANGES. This means the '02' partition path and the keypad-derived
+        path don't double-fire, repeated frames of the same state don't spam
+        triggers, and a partition that only ever sends keypad updates (some EVL
+        firmware) still gets armed/disarmed/alarm events."""
+        evt = self._PARTITION_EVENTS.get(state)
+        if evt and self.partition_last_event.get(partition) != evt:
+            self.partition_last_event[partition] = evt
+            self._fire_event(evt)
 
     # ── Frame dispatch ─────────────────────────────────────────────────────
 
@@ -295,8 +376,7 @@ class Plugin(indigo.PluginBase):
             {"key": "ledBitmap",     "value": f"0x{ku.led_bitmap:02X}"},
             {"key": "beepCode",      "value": ku.beep_code},
         ])
-        if ku.alarm:
-            self._fire_event("alarm_triggered", partition=ku.partition)
+        self._emit_partition_events(ku.partition, derived)
 
     def _handle_zone_state(self, zsc: ZoneStateChange):
         dev = self.zone_devs.get(zsc.zone)
@@ -304,8 +384,15 @@ class Plugin(indigo.PluginBase):
             if self.debug:
                 self.logger.debug(f"zone state change for untracked zone {zsc.zone}")
             return
-        # Standard onState mapping: open/alarm/trouble = on, closed/bypass = off
-        on = zsc.state in (ZoneState.OPEN, ZoneState.ALARM, ZoneState.TROUBLE)
+        # onState mapping: open/alarm/trouble = on, closed/bypass = off. For a
+        # security sensor the safe failure direction is "fault visible", so an
+        # unrecognised code also maps to ON rather than silently reading as a
+        # closed door.
+        if zsc.state == ZoneState.UNKNOWN:
+            self.logger.warning(
+                f"{dev.name}: unrecognised zone state code — reporting as faulted (on)"
+            )
+        on = zsc.state in (ZoneState.OPEN, ZoneState.ALARM, ZoneState.TROUBLE, ZoneState.UNKNOWN)
         dev.updateStatesOnServer([
             {"key": "onOffState", "value": on},
             {"key": "zoneState", "value": zsc.state.value},
@@ -316,16 +403,7 @@ class Plugin(indigo.PluginBase):
         if not dev:
             return
         dev.updateStateOnServer("state", value=psc.state.value)
-        # Targeted events for handy triggers
-        event_map = {
-            PartitionState.ALARM:       "alarm_triggered",
-            PartitionState.ARMED_AWAY:  "armed_away",
-            PartitionState.ARMED_STAY:  "armed_stay",
-            PartitionState.READY:       "disarmed",
-        }
-        evt = event_map.get(psc.state)
-        if evt:
-            self._fire_event(evt, partition=psc.partition)
+        self._emit_partition_events(psc.partition, psc.state)
 
     def _handle_cid_event(self, cid: RealtimeCIDEvent):
         self.logger.info(
@@ -417,10 +495,25 @@ class Plugin(indigo.PluginBase):
             return
         try:
             zone = int((action.props or {}).get("zone_number", "0"))
-        except ValueError:
+        except (ValueError, TypeError):
             self.logger.error("bypass_zone: invalid zone_number")
             return
         self.client.send_raw(encode_bypass_zone(code, zone, self._partition_from(dev)))
+
+    # ── Sensor action (zone devices are type="sensor") ─────────────────────
+
+    def actionControlSensor(self, action, dev):
+        """Zones are receive-only. Declaring type="sensor" obliges this handler —
+        without it Indigo logs 'plugin does not define method actionControlSensor'
+        and drops the action. The only meaningful action is a status request."""
+        if action.sensorAction == indigo.kSensorAction.RequestStatus:
+            if self.client and self.client.is_connected():
+                self.client.send_raw(encode_dump_zone_timers())
+                self.logger.info(f"{dev.name}: status requested — polled zone-timer dump")
+            else:
+                self.logger.warning(f"{dev.name}: status request ignored — EVL not connected")
+        else:
+            self.logger.warning(f"{dev.name}: unsupported sensor action {action.sensorAction}")
 
     # ── Menu items ─────────────────────────────────────────────────────────
 
@@ -497,7 +590,14 @@ class Plugin(indigo.PluginBase):
         path = f"/tmp/honeywell_envisalink_diag_{int(time.time())}.json"
         with open(path, "w", encoding="utf-8") as f:
             json.dump(bundle, f, indent=2, default=str)
+        try:
+            _os.chmod(path, 0o600)   # owner-only — it's in world-readable /tmp
+        except OSError:
+            pass
         indigo.server.log(f"Diagnostic bundle written to {path}")
+        # Safe by construction: the password is never in the dict, and the recent
+        # traffic is redacted at source (login send + user codes masked before the
+        # ring buffer ever sees them).
         indigo.server.log("Safe to share — contains no password and no user codes.")
         indigo.server.log("Send via the Indigo forum (thread reply or DM 'CliveS').")
 
@@ -514,5 +614,8 @@ class Plugin(indigo.PluginBase):
         self.test_mode = not self.test_mode
         self.pluginPrefs["test_mode"] = self.test_mode
         warn = "" if self.test_mode else " — COMMANDS NOW LIVE, can arm/disarm panel!"
+        # NB: indigo.server.warningLogLevel does NOT exist (verified live) — passing
+        # it raised AttributeError on exactly the commands-live branch. Use the
+        # documented logging level int instead.
         indigo.server.log(f"Test mode now {'ON (safe)' if self.test_mode else 'OFF'}{warn}",
-                          level=indigo.server.warningLogLevel if not self.test_mode else None)
+                          level=logging.WARNING if not self.test_mode else None)

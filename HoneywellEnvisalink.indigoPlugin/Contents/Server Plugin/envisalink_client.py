@@ -5,9 +5,9 @@
 #              Handles connect, login, reconnect, line framing, and dispatching
 #              parsed frames to a callback. Debug logging mode dumps every byte
 #              in both directions (with user codes redacted).
-# Author:      Highsteads / CliveS & Claude Opus 4.7
-# Date:        26-05-2026
-# Version:     0.1.4-beta
+# Author:      Highsteads / CliveS & Claude Opus 4.8
+# Date:        25-06-2026
+# Version:     0.2.0-beta
 
 import socket
 import threading
@@ -74,6 +74,7 @@ class EnvisalinkClient:
         self._thread: Optional[threading.Thread] = None
         self._stop_evt = threading.Event()
         self._connected = False
+        self._auth_failed = False   # set on login FAILED — stops the reconnect loop
         self._send_lock = threading.Lock()
 
         # Diagnostics — ring buffer of last N (timestamp, direction, line) tuples
@@ -139,19 +140,24 @@ class EnvisalinkClient:
         trailing \\r\\n and the checksum. Returns False if not connected.
         Thread-safe.
         """
-        if not self._connected or not self._sock:
-            self._log("warning", f"send dropped — not connected: {line!r}")
+        # Capture the socket reference locally: stop()/the recv loop can set
+        # self._sock to None between this guard and the sendall, which would
+        # otherwise raise AttributeError on None.
+        sock = self._sock
+        if not self._connected or sock is None:
+            # Redact: an action send carries the user code, which must never hit the log.
+            self._log("warning", f"send dropped — not connected: {redact_line_for_log(line)!r}")
             return False
         data = line.encode("ascii", errors="replace")
         with self._send_lock:
             try:
-                self._sock.sendall(data)
-            except OSError as e:
+                sock.sendall(data)
+            except (OSError, AttributeError) as e:
                 self._log("warning", f"send error: {e}")
                 self._connected = False
                 return False
-        self.bytes_tx += len(data)
-        self.frames_tx += 1
+            self.bytes_tx += len(data)
+            self.frames_tx += 1
         self._record_debug("TX", line)
         return True
 
@@ -196,7 +202,14 @@ class EnvisalinkClient:
 
     def _record_debug(self, direction: str, line: str):
         ts = time.time()
-        safe = redact_line_for_log(line.rstrip("\r\n"))
+        raw = line.rstrip("\r\n")
+        # Defence-in-depth for credentials: the ONLY outbound line that is not a
+        # "^" keystroke command is the bare login password. Never let it reach the
+        # ring buffer (which feeds the diagnostic bundle) or the protocol log.
+        if direction == "TX" and not raw.startswith("^"):
+            safe = "<login: ****>"
+        else:
+            safe = redact_line_for_log(raw)
         with self._debug_lock:
             self._debug_log.append((ts, direction, safe))
         if self.debug_protocol:
@@ -212,6 +225,16 @@ class EnvisalinkClient:
             except Exception as e:
                 self._log("warning", f"connection loop error: {e}")
             self._connected = False
+            if self._auth_failed:
+                # Wrong credentials won't fix themselves by retrying. The previous
+                # code only `return`ed from _connect_and_run, so the outer loop here
+                # reconnected and re-sent the bad password forever. Stop the loop.
+                self._log("error",
+                          "login FAILED — stopping reconnect. Fix the EVL password "
+                          "in plugin config (or IndigoSecrets.py), then reload the plugin.")
+                if not self._stop_evt.is_set():
+                    self.on_disconnect("auth_failed")
+                break
             # Suppress the disconnect callback when we're stopping — the plugin
             # is mid-shutdown, calling back into indigo APIs (trigger.execute,
             # device.updateStateOnServer) from this thread races the host's
@@ -266,6 +289,11 @@ class EnvisalinkClient:
 
             # TPI is line-delimited with CRLF
             while b"\r\n" in buf:
+                # Re-check the stop event per line so on_login/on_frame are not
+                # invoked into Indigo APIs once shutdown has been signalled —
+                # mirrors the on_disconnect guard in _run().
+                if self._stop_evt.is_set():
+                    break
                 line, buf = buf.split(b"\r\n", 1)
                 try:
                     text = line.decode("ascii", errors="replace")
@@ -284,24 +312,26 @@ class EnvisalinkClient:
                         pwd_line = encode_login(self.password)
                         with self._send_lock:
                             try:
-                                sock.sendall(pwd_line.encode("ascii"))
+                                sock.sendall(pwd_line.encode("ascii", errors="replace"))
                             except OSError as e:
                                 self._log("warning", f"login send failed: {e}")
                                 break
-                        self.bytes_tx += len(pwd_line)
-                        self.frames_tx += 1
-                        self._record_debug("TX", pwd_line)
+                            self.bytes_tx += len(pwd_line)
+                            self.frames_tx += 1
+                        # NEVER record the credential — log a fixed marker only.
+                        self._record_debug("TX", "<login: ****>")
                         continue
                     if text == "OK":
                         login_done = True
                         self._connected = True
+                        self._auth_failed = False
                         self._log("info", "login OK — connection live")
                         self.on_login(LoginResult.OK)
                         continue
                     if text == "FAILED":
-                        self._log("error", "login FAILED — check EVL password in plugin config")
+                        self._auth_failed = True   # _run() sees this and stops retrying
                         self.on_login(LoginResult.FAILED)
-                        return   # don't retry — wrong creds won't fix themselves
+                        return
                     # Some EVL firmware sends a welcome banner before the prompt — ignore
                     continue
 

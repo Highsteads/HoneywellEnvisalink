@@ -1,10 +1,11 @@
 # HoneywellEnvisalink
 
-> # 🚧 BETA — v0.1.4-beta — needs beta testers with real hardware
+> # 🚧 BETA — v0.2.0-beta — needs beta testers with real hardware
 >
 > This plugin has **never been tested against an actual Honeywell panel**. The protocol implementation, plugin structure, safety rails and test
-> infrastructure are all in place, and a 59-case automated test suite covers the protocol parser/encoder end to end — but only somebody with a real
-> Vista panel and Envisalink module can verify that what the code thinks the panel says matches what your panel actually says.
+> infrastructure are all in place, and a 105-case automated test suite covers the protocol parser/encoder, the credential-redaction paths and the
+> config handling — but only somebody with a real Vista panel and Envisalink module can verify that what the code thinks the panel says matches what
+> your panel actually says.
 >
 > **Do not install this on a panel you depend on for security without reading the [Safety design](#safety-design) section first.** Test mode is on by
 > default for exactly this reason.
@@ -13,9 +14,22 @@
 
 An [Indigo Domotics](https://www.indigodomo.com) plugin that connects **Honeywell Vista alarm panels** to Indigo via an **Envisalink** network module.
 
-## What's new since v0.1.1-beta
+## What's new in v0.2.0-beta
 
-The first two releases shipped without anyone (including me) having driven the plugin against any kind of EVL — real or simulated. That changed this week. Wiring it up to the bundled `mock_evl_server.py` for a proper end-to-end run turned up two real bugs and a handful of robustness gaps. All fixed in this release.
+A full deep review of the plugin, with the findings adversarially double-checked and then fixed in one pass. The headline is a security fix, but there are a good number of robustness improvements alongside it.
+
+- **Security: the EVL password could leak into the diagnostic bundle and the protocol log.** The login send was being recorded through the same debug path as everything else, and the redactor only masked user codes in keystroke commands, not the bare password. So the one file the plugin told you was safe to share on the forum could have your Envisalink password sitting in it in plain text. The login send is now masked at source — it never reaches the ring buffer, the log, or the bundle. The "safe to share" promise is finally true, and there is now a test that fails if a password ever sneaks back in.
+- **A wrong password no longer retries forever.** A failed login used to drop straight back into the reconnect loop and hammer the board with the same bad password indefinitely. It now stops, logs a clear message asking you to fix the password, and waits for you to reload the plugin.
+- **A blank or mistyped port no longer stops the plugin loading.** Clearing the port field and saving used to take the whole plugin down on the next reload. It now falls back to 4025, and the config dialog validates the port before it lets you save.
+- **Steadier panel-state reading.** Armed-Stay can no longer be misread as Armed-Max, alarm-in-memory is now picked up from the keypad LED as well as the display text, and the Contact ID parser copes with both of the firmware formats an Envisalink can send. An unrecognised zone code now shows as faulted rather than silently reading as a closed door — the safe direction for a security sensor.
+- **New trigger events for Arm Instant and Arm Max**, and the Disarmed event now fires even when a partition comes back not-ready because a zone was left open. Repeated identical panel updates no longer re-fire the same trigger over and over.
+- **Zones answer a status request cleanly** instead of logging an error, and shutdown is a little tidier around the background network thread.
+
+The automated test suite has grown from 59 to 105 cases to cover all of the above.
+
+## Earlier changes (since v0.1.1-beta)
+
+The first two releases shipped without anyone (including me) having driven the plugin against any kind of EVL — real or simulated. That changed back in May. Wiring it up to the bundled `mock_evl_server.py` for a proper end-to-end run turned up two real bugs and a handful of robustness gaps. All fixed at the time.
 
 - **Login was silently failing** (0.1.4-beta). The password send was being dropped by an over-eager safety check on the public send path. Direct sendall during the login handshake instead. If you tried v0.1.0 or v0.1.1 and it just sat there saying "send dropped — not connected", this is why.
 - **Orphan plugin host processes on restart** (0.1.3-beta). The TPI socket recv loop only woke promptly when the socket was explicitly shut down, but during reconnect backoff there is no socket to shut down. Hardened with a 1-second recv tick so the loop checks the stop event regardless, plus a 60-second stale-connection detector that's independent of the recv timeout. Join timeout reduced to 3 seconds with a warning logged if the worker thread doesn't exit cleanly.
@@ -52,12 +66,12 @@ Alarm panels are not lights — getting it wrong has real consequences. The plug
    accidentally trigger or disarm your panel during initial setup.
 2. **User codes are never stored.** Codes are entered into each action's config UI individually (with `secure="true"` so they're masked) and pass straight
    through to the panel. They are not held in plugin prefs, not written to any state, not logged.
-3. **All outgoing protocol traffic is redacted in logs.** The debug protocol logger replaces user codes with `****` before writing anything. Verified by
-   the pytest suite.
+3. **All outgoing protocol traffic is redacted in logs.** User codes in keystroke commands are replaced with `****`, and the login password is masked at
+   source so it never reaches the log, the recent-traffic buffer or the diagnostic bundle. Verified by the pytest suite.
 
 ## Testing & debugging from afar
 
-I (the author) don't have a Honeywell panel to test against, which is why this is a v0.1.4-beta explicitly looking for test pilots. To make remote debugging
+I (the author) don't have a Honeywell panel to test against, which is why this is a v0.2.0-beta explicitly looking for test pilots. To make remote debugging
 tractable, the plugin ships with:
 
 ### Built-in diagnostic menu items
