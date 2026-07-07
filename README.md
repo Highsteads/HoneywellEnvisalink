@@ -1,11 +1,12 @@
 # HoneywellEnvisalink
 
-> # 🚧 BETA — v0.2.0-beta — needs beta testers with real hardware
+> # 🚧 BETA — v0.3.0-beta — protocol now corrected against real hardware, still wants testers
 >
-> This plugin has **never been tested against an actual Honeywell panel**. The protocol implementation, plugin structure, safety rails and test
-> infrastructure are all in place, and a 105-case automated test suite covers the protocol parser/encoder, the credential-redaction paths and the
-> config handling — but only somebody with a real Vista panel and Envisalink module can verify that what the code thinks the panel says matches what
-> your panel actually says.
+> The first real-hardware run finally happened (a tester on a Vista 20P with an EVL4), and it turned up a fundamental problem: the first releases were
+> built against the wrong idea of the Honeywell Envisalink wire format, so on a real panel the plugin read the connection but parsed zero frames. That is
+> **fixed in v0.3.0-beta** — the protocol has been rewritten to the actual Envisalink TPI that real panels speak, verified against the tester's own captured
+> frames. State-reading should now work. What still needs confirming on real hardware is the finer detail (individual zone open/close, and the arm/disarm
+> commands with test mode off), which is why this is still a beta looking for pilots.
 >
 > **Do not install this on a panel you depend on for security without reading the [Safety design](#safety-design) section first.** Test mode is on by
 > default for exactly this reason.
@@ -13,6 +14,18 @@
 > If you've got Honeywell hardware and are up for being a beta tester, see [Testing & debugging from afar](#testing--debugging-from-afar) below.
 
 An [Indigo Domotics](https://www.indigodomo.com) plugin that connects **Honeywell Vista alarm panels** to Indigo via an **Envisalink** network module.
+
+## What's new in v0.3.0-beta
+
+The plugin met real hardware for the first time — and it exposed that the whole protocol layer was built against the wrong wire format. Real Envisalink Honeywell panels frame every message with a trailing `$` and no checksum, use a 16-bit keypad LED field, and send keystrokes one at a time under different command codes. The first releases assumed a DSC-style 2-character checksum, an 8-bit LED field and bundled keystrokes, so on a real panel it connected, logged in, and then rejected every single frame as a bad checksum (the tester saw the connection go live but zero panel state come through).
+
+- **Protocol rewritten to the real Envisalink Honeywell TPI.** Framing, the 16-bit keypad flags, the partition and Contact ID messages, and the outgoing arm/disarm/keypress commands have all been corrected to what real panels actually speak — verified against the exact frames the tester captured on a Vista 20P.
+- **The mock server now speaks the real framing too**, so the automated tests can never drift back to the old wrong model. The tester's real captured frames are baked in as regression fixtures.
+- **A KeepAlive poll** is now sent periodically to keep the module's session open.
+
+This is the change that should take the plugin from "connects but shows nothing" to "actually reads your panel". The credential-redaction and robustness work from v0.2.0-beta (below) all carried through — and the tester confirmed the diagnostic bundle came out with the password already masked.
+
+The automated suite is 77 cases against the real protocol, including the real-hardware captures.
 
 ## What's new in v0.2.0-beta
 
@@ -71,7 +84,7 @@ Alarm panels are not lights — getting it wrong has real consequences. The plug
 
 ## Testing & debugging from afar
 
-I (the author) don't have a Honeywell panel to test against, which is why this is a v0.2.0-beta explicitly looking for test pilots. To make remote debugging
+I (the author) don't have a Honeywell panel to test against, which is why this is a v0.3.0-beta explicitly looking for test pilots. To make remote debugging
 tractable, the plugin ships with:
 
 ### Built-in diagnostic menu items

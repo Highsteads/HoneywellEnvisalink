@@ -4,8 +4,8 @@
 # Description: HoneywellEnvisalink — Indigo plugin connecting Honeywell Vista
 #              alarm panels to Indigo via Envisalink network modules (EVL3/EVL4).
 # Author:      Highsteads / CliveS & Claude Opus 4.8
-# Date:        25-06-2026
-# Version:     0.2.0-beta
+# Date:        26-06-2026
+# Version:     0.3.0-beta
 # Plugin ID:   com.clives.indigoplugin.honeywell-envisalink
 
 import os as _os
@@ -18,8 +18,8 @@ import logging
 import time
 
 from honeywell_protocol import (
-    KeypadUpdate, ZoneStateChange, PartitionStateChange, RealtimeCIDEvent,
-    PartitionState, ZoneState, LoginResult,
+    KeypadUpdate, ZoneBitmap, RealtimeCIDEvent,
+    PartitionState, LoginResult,
     parse_keypad_update, parse_zone_state, parse_partition_state, parse_realtime_cid,
     derive_partition_state,
     encode_disarm, encode_arm_away, encode_arm_stay, encode_arm_instant,
@@ -40,7 +40,7 @@ try:
 except ImportError:
     ENVISALINK_PASSWORD = ""
 
-PLUGIN_VERSION = "0.2.0-beta"
+PLUGIN_VERSION = "0.3.0-beta"
 PLUGIN_ID = "com.clives.indigoplugin.honeywell-envisalink"
 
 DEFAULT_PORT = 4025
@@ -341,13 +341,13 @@ class Plugin(indigo.PluginBase):
             if ku:
                 self._handle_keypad_update(ku)
                 return
-            zsc = parse_zone_state(frame)
-            if zsc:
-                self._handle_zone_state(zsc)
+            zb = parse_zone_state(frame)
+            if zb:
+                self._handle_zone_bitmap(zb)
                 return
-            psc = parse_partition_state(frame)
-            if psc:
-                self._handle_partition_state(psc)
+            changes = parse_partition_state(frame)
+            if changes:
+                self._handle_partition_state(changes)
                 return
             cid = parse_realtime_cid(frame)
             if cid:
@@ -373,37 +373,29 @@ class Plugin(indigo.PluginBase):
             {"key": "chime",         "value": ku.chime},
             {"key": "alarm",         "value": ku.alarm},
             {"key": "state",         "value": derived.value},
-            {"key": "ledBitmap",     "value": f"0x{ku.led_bitmap:02X}"},
+            {"key": "ledBitmap",     "value": f"0x{ku.led_bitmap:04X}"},
             {"key": "beepCode",      "value": ku.beep_code},
         ])
         self._emit_partition_events(ku.partition, derived)
 
-    def _handle_zone_state(self, zsc: ZoneStateChange):
-        dev = self.zone_devs.get(zsc.zone)
-        if not dev:
-            if self.debug:
-                self.logger.debug(f"zone state change for untracked zone {zsc.zone}")
-            return
-        # onState mapping: open/alarm/trouble = on, closed/bypass = off. For a
-        # security sensor the safe failure direction is "fault visible", so an
-        # unrecognised code also maps to ON rather than silently reading as a
-        # closed door.
-        if zsc.state == ZoneState.UNKNOWN:
-            self.logger.warning(
-                f"{dev.name}: unrecognised zone state code — reporting as faulted (on)"
-            )
-        on = zsc.state in (ZoneState.OPEN, ZoneState.ALARM, ZoneState.TROUBLE, ZoneState.UNKNOWN)
-        dev.updateStatesOnServer([
-            {"key": "onOffState", "value": on},
-            {"key": "zoneState", "value": zsc.state.value},
-        ])
+    def _handle_zone_bitmap(self, zb: ZoneBitmap):
+        # A %01 message is a bitmap of ALL open zones — update every tracked zone
+        # (a zone not in the set is closed).
+        for znum, dev in self.zone_devs.items():
+            is_open = znum in zb.open_zones
+            dev.updateStatesOnServer([
+                {"key": "onOffState", "value": is_open},
+                {"key": "zoneState", "value": "open" if is_open else "closed"},
+            ])
 
-    def _handle_partition_state(self, psc: PartitionStateChange):
-        dev = self.partition_devs.get(psc.partition)
-        if not dev:
-            return
-        dev.updateStateOnServer("state", value=psc.state.value)
-        self._emit_partition_events(psc.partition, psc.state)
+    def _handle_partition_state(self, changes):
+        # A %02 message carries the status of every partition at once.
+        for psc in changes:
+            dev = self.partition_devs.get(psc.partition)
+            if not dev:
+                continue
+            dev.updateStateOnServer("state", value=psc.state.value)
+            self._emit_partition_events(psc.partition, psc.state)
 
     def _handle_cid_event(self, cid: RealtimeCIDEvent):
         self.logger.info(
@@ -453,7 +445,7 @@ class Plugin(indigo.PluginBase):
         if not code:
             self.logger.error("disarm: invalid or missing user_code (must be 4-6 digits)")
             return
-        self.client.send_raw(encode_disarm(code, self._partition_from(dev)))
+        self.client.send_keypresses(encode_disarm(code, self._partition_from(dev)))
 
     def action_arm_away(self, action, dev):
         if not self._gate_command("arm_away"): return
@@ -461,7 +453,7 @@ class Plugin(indigo.PluginBase):
         if not code:
             self.logger.error("arm_away: invalid or missing user_code")
             return
-        self.client.send_raw(encode_arm_away(code, self._partition_from(dev)))
+        self.client.send_keypresses(encode_arm_away(code, self._partition_from(dev)))
 
     def action_arm_stay(self, action, dev):
         if not self._gate_command("arm_stay"): return
@@ -469,7 +461,7 @@ class Plugin(indigo.PluginBase):
         if not code:
             self.logger.error("arm_stay: invalid or missing user_code")
             return
-        self.client.send_raw(encode_arm_stay(code, self._partition_from(dev)))
+        self.client.send_keypresses(encode_arm_stay(code, self._partition_from(dev)))
 
     def action_arm_instant(self, action, dev):
         if not self._gate_command("arm_instant"): return
@@ -477,7 +469,7 @@ class Plugin(indigo.PluginBase):
         if not code:
             self.logger.error("arm_instant: invalid or missing user_code")
             return
-        self.client.send_raw(encode_arm_instant(code, self._partition_from(dev)))
+        self.client.send_keypresses(encode_arm_instant(code, self._partition_from(dev)))
 
     def action_arm_max(self, action, dev):
         if not self._gate_command("arm_max"): return
@@ -485,7 +477,7 @@ class Plugin(indigo.PluginBase):
         if not code:
             self.logger.error("arm_max: invalid or missing user_code")
             return
-        self.client.send_raw(encode_arm_max(code, self._partition_from(dev)))
+        self.client.send_keypresses(encode_arm_max(code, self._partition_from(dev)))
 
     def action_bypass_zone(self, action, dev):
         if not self._gate_command("bypass_zone"): return
@@ -498,7 +490,7 @@ class Plugin(indigo.PluginBase):
         except (ValueError, TypeError):
             self.logger.error("bypass_zone: invalid zone_number")
             return
-        self.client.send_raw(encode_bypass_zone(code, zone, self._partition_from(dev)))
+        self.client.send_keypresses(encode_bypass_zone(code, zone, self._partition_from(dev)))
 
     # ── Sensor action (zone devices are type="sensor") ─────────────────────
 

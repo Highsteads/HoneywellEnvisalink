@@ -1,13 +1,12 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 # Filename:    mock_evl_server.py
-# Description: A minimal mock Envisalink server speaking the Honeywell TPI
-#              protocol. Lets you develop and demo the plugin against fake
-#              hardware before testing on real kit. Also useful for
-#              regression tests in CI.
-# Author:      Highsteads / CliveS & Claude
-# Date:        24-05-2026
-# Version:     0.1.1
+# Description: A mock Envisalink server speaking the REAL Honeywell TPI protocol
+#              ($-terminated frames, no checksum, 16-bit keypad flags). Lets you
+#              develop and demo the plugin against fake hardware.
+# Author:      Highsteads / CliveS & Claude Opus 4.8
+# Date:        26-06-2026
+# Version:     0.3.0
 #
 # Usage:
 #   python3 tools/mock_evl_server.py [--port 4025] [--password user] [--scenario default]
@@ -15,8 +14,8 @@
 # Then point the plugin at  localhost:4025  with the password you set.
 #
 # Scenarios:
-#   default       — fires a series of plausible events: zone trips, arm, alarm
-#   ready_only    — just sits showing 'Ready' for the partition
+#   default       — plausible events: zone trips, arm, alarm, disarm
+#   ready_only    — just sits showing 'Ready to Arm'
 #   stress        — fires events as fast as the client will accept them
 
 import argparse
@@ -30,31 +29,33 @@ PLUGIN_SRC = Path(__file__).parent.parent / "HoneywellEnvisalink.indigoPlugin" /
 sys.path.insert(0, str(PLUGIN_SRC))
 
 from honeywell_protocol import (
-    tpi_checksum, LED_ARMED, LED_READY, LED_AC_POWER, LED_ALARM,
+    FLAG_READY, FLAG_AC_PRESENT, FLAG_ARMED_AWAY, FLAG_ALARM, FLAG_BYPASS,
 )
 
 
-def make_line(prefix, code, payload):
-    body = f"{code},{payload}" if payload else code
-    return f"{prefix}{body}{tpi_checksum(body)}\r\n".encode()
+def make_line(prefix, code, data=""):
+    """Real Honeywell TPI framing: <prefix><CC>,<DATA>$ + CRLF, NO checksum."""
+    return f"{prefix}{code},{data}$\r\n".encode()
 
 
-def keypad_update(partition, led, zone=0, beep=0, text="Ready"):
-    text = text[:32].ljust(32)
-    payload = f"{partition},{led:02X},{zone:03d},{beep},{text}"
-    return make_line("%", "00", payload)
+def keypad_update(partition, flags, zone=0, beep=0, text="Ready to Arm"):
+    text = text[:32]
+    return make_line("%", "00", f"{partition:02d},{flags:04X},{zone:02d},{beep:02d},{text}")
 
 
-def zone_state(zone, state):
-    return make_line("%", "01", f"{zone:03d},{state}")
-
-
-def partition_state(partition, state):
-    return make_line("%", "02", f"{partition},{state}")
+def partition_state(codes):
+    """codes: list of eight 2-char partition status codes."""
+    return make_line("%", "02", "".join(codes))
 
 
 def cid_event(qualifier, code, partition, zone_or_user):
-    return make_line("%", "03", f"{qualifier}{code:03d}{partition:02d}{zone_or_user:04d}")
+    return make_line("%", "03", f"{qualifier}{code:03d}{partition:02d}{zone_or_user:03d}")
+
+
+READY   = FLAG_READY | FLAG_AC_PRESENT                 # 0x1008 — disarmed, ready
+EXITING = FLAG_ARMED_AWAY | FLAG_AC_PRESENT            # arming, exit delay
+ARMED   = FLAG_ARMED_AWAY | FLAG_AC_PRESENT            # armed away
+INALARM = FLAG_ALARM | FLAG_ARMED_AWAY | FLAG_AC_PRESENT
 
 
 class MockEVL:
@@ -83,7 +84,6 @@ class MockEVL:
 
     def handle(self, sock):
         sock.sendall(b"Login:\r\n")
-        # Wait for password
         buf = b""
         sock.settimeout(10)
         try:
@@ -104,11 +104,37 @@ class MockEVL:
         sock.sendall(b"OK\r\n")
         print("[mock_evl] login OK")
 
-        # Start sending the scenario
+        # Drain + respond to the client's outgoing commands (keepalive/dump/keypress)
+        threading.Thread(target=self._reader, args=(sock,), daemon=True).start()
         try:
             self.run_scenario(sock)
         except (OSError, BrokenPipeError) as e:
             print(f"[mock_evl] client disconnected: {e}")
+
+    def _reader(self, sock):
+        sock2 = sock
+        buf = b""
+        try:
+            sock2.settimeout(1.0)
+            while not self.stop.is_set():
+                try:
+                    data = sock2.recv(256)
+                except socket.timeout:
+                    continue
+                if not data:
+                    return
+                buf += data
+                while b"\r\n" in buf:
+                    line, buf = buf.split(b"\r\n", 1)
+                    text = line.decode("ascii", "replace")
+                    if text.startswith("^00,"):          # KeepAlive → poll response
+                        sock2.sendall(make_line("^", "00", "00"))
+                    elif text.startswith("^02,"):        # DumpZoneTimers → empty dump
+                        sock2.sendall(make_line("%", "FF", "0" * 128))
+                    elif text.startswith("^03,"):        # keypress — just ack
+                        sock2.sendall(make_line("^", "03", "00"))
+        except OSError:
+            return
 
     def run_scenario(self, sock):
         if self.scenario == "stress":
@@ -120,29 +146,20 @@ class MockEVL:
 
     def scenario_ready_only(self, sock):
         while not self.stop.is_set():
-            sock.sendall(keypad_update(1, LED_READY | LED_AC_POWER, text="Ready                    "))
-            time.sleep(30)
+            sock.sendall(keypad_update(1, READY, text="****DISARMED****  Ready to Arm  "))
+            time.sleep(10)
 
     def scenario_default(self, sock):
         scripts = [
-            (0,    keypad_update(1, LED_READY | LED_AC_POWER, text="Ready                    ")),
-            (2,    zone_state(1, "C")),
-            (2,    zone_state(2, "C")),
-            (5,    zone_state(1, "O")),    # front door opens
-            (1,    keypad_update(1, LED_AC_POWER, zone=1, beep=1, text="Faulted 01 Front Door    ")),
-            (3,    zone_state(1, "C")),    # closed again
-            (1,    keypad_update(1, LED_READY | LED_AC_POWER, text="Ready                    ")),
-            (5,    partition_state(1, "EXIT_DELAY")),
-            (0,    keypad_update(1, LED_ARMED | LED_AC_POWER, beep=3, text="ARMED MAY EXIT NOW       ")),
-            (10,   partition_state(1, "ARMED_AWAY")),
-            (0,    keypad_update(1, LED_ARMED | LED_AC_POWER, text="ARMED ***AWAY***         ")),
-            (15,   zone_state(5, "O")),    # motion triggers
-            (0,    cid_event(1, 130, 1, 5)),
-            (0,    partition_state(1, "ALARM")),
-            (0,    keypad_update(1, LED_ARMED | LED_ALARM | LED_AC_POWER, zone=5,
-                                 beep=10, text="ALARM ZONE 5             ")),
-            (15,   partition_state(1, "READY")),
-            (0,    keypad_update(1, LED_READY | LED_AC_POWER, text="Ready                    ")),
+            (0,  keypad_update(1, READY, text="****DISARMED****  Ready to Arm  ")),
+            (5,  keypad_update(1, READY, zone=1, beep=1, text="FAULT 01 FRONT DOOR             ")),
+            (3,  keypad_update(1, READY, text="****DISARMED****  Ready to Arm  ")),
+            (5,  keypad_update(1, EXITING, beep=3, text="ARMED ***AWAY***  May Exit Now  ")),
+            (10, partition_state(["05", "00", "00", "00", "00", "00", "00", "00"])),
+            (0,  keypad_update(1, ARMED, text="ARMED ***AWAY***                ")),
+            (15, cid_event(1, 130, 1, 5)),
+            (0,  keypad_update(1, INALARM, zone=5, beep=4, text="ALARM 05 MOTION                 ")),
+            (15, keypad_update(1, READY, text="****DISARMED****  Ready to Arm  ")),
         ]
         while not self.stop.is_set():
             for delay, msg in scripts:
@@ -155,12 +172,9 @@ class MockEVL:
     def scenario_stress(self, sock):
         i = 0
         while not self.stop.is_set():
-            zone = (i % 8) + 1
-            sock.sendall(zone_state(zone, "O" if i % 2 == 0 else "C"))
+            flags = READY if i % 2 == 0 else (READY | FLAG_BYPASS)
+            sock.sendall(keypad_update(1, flags, text=f"Cycle {i}                        "))
             i += 1
-            if i % 20 == 0:
-                sock.sendall(keypad_update(1, LED_READY | LED_AC_POWER,
-                                           text=f"Cycle {i}                "))
             time.sleep(0.05)
 
 

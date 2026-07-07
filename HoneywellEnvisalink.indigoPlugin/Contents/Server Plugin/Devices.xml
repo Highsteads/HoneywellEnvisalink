@@ -69,6 +69,7 @@
                         <Option value="armed_max">Armed Max</Option>
                         <Option value="entry_delay">Entry Delay</Option>
                         <Option value="exit_delay">Exit Delay</Option>
+                        <Option value="exit_entry_delay">Exit / Entry Delay</Option>
                         <Option value="alarm">ALARM</Option>
                         <Option value="alarm_memory">Alarm Memory</Option>
                         <Option value="trouble">Trouble</Option>

@@ -6,8 +6,8 @@
 #              parsed frames to a callback. Debug logging mode dumps every byte
 #              in both directions (with user codes redacted).
 # Author:      Highsteads / CliveS & Claude Opus 4.8
-# Date:        25-06-2026
-# Version:     0.2.0-beta
+# Date:        26-06-2026
+# Version:     0.3.0-beta
 
 import socket
 import threading
@@ -17,18 +17,21 @@ from datetime import datetime
 from typing import Callable, Optional
 
 from honeywell_protocol import (
-    LoginResult, RawFrame, parse_frame, encode_login, redact_line_for_log,
+    LoginResult, RawFrame, parse_frame, encode_login, encode_keepalive,
+    redact_line_for_log,
 )
 
 
 DEFAULT_PORT = 4025
 DEFAULT_CONNECT_TIMEOUT_S = 5     # connect blocks the thread (self._sock not yet set), keep it tight
 RECV_SOCKET_TIMEOUT_S = 1.0       # short tick: lets the recv loop wake promptly when _stop_evt flips
-STALE_CONNECTION_S = 60           # EVL pings every ~30s — no traffic for 60s ⇒ treat as stale and reconnect
+STALE_CONNECTION_S = 60           # EVL streams %00 every ~10s — no traffic for 60s ⇒ stale, reconnect
+KEEPALIVE_INTERVAL_S = 20         # send ^00,$ poll this often to keep the module's session alive
 DEFAULT_RECONNECT_DELAY_S = 5
 MAX_RECONNECT_DELAY_S = 60
 DEBUG_RING_BUFFER_SIZE = 500      # last N raw lines kept in memory for diagnostics
 THREAD_JOIN_TIMEOUT_S = 3         # shutdown grace period — short, so plugin host exits promptly
+KEYPRESS_GAP_S = 0.15             # gap between individual keystrokes so the panel doesn't overrun
 
 
 class EnvisalinkClient:
@@ -161,6 +164,21 @@ class EnvisalinkClient:
         self._record_debug("TX", line)
         return True
 
+    def send_keypresses(self, commands) -> bool:
+        """
+        Send a sequence of individual keypress commands (Honeywell sends one
+        character per ^03 command). Paced with a short gap so the panel's TPI
+        receiver doesn't overrun. Returns False if any send is dropped.
+        """
+        ok = True
+        for i, cmd in enumerate(commands):
+            if not self.send_raw(cmd):
+                ok = False
+                break
+            if i < len(commands) - 1 and self._stop_evt.wait(KEYPRESS_GAP_S):
+                break   # stopping — abandon the rest of the sequence
+        return ok
+
     def set_debug_protocol(self, enabled: bool):
         """Toggle verbose protocol logging at runtime."""
         self.debug_protocol = enabled
@@ -264,16 +282,21 @@ class EnvisalinkClient:
         # connection itself is tracked separately via last_rx_ts.
         buf = b""
         login_done = False
+        last_keepalive = time.time()
         while not self._stop_evt.is_set():
             try:
                 chunk = sock.recv(4096)
             except socket.timeout:
                 # Short-tick wakeup — not a connection failure. Loop back to
                 # the stop-event check. Use last_rx_ts to spot a genuinely
-                # stale connection (EVL pings ~every 30s).
+                # stale connection (EVL streams %00 every ~10s).
                 if time.time() - (self.last_rx_ts or 0) > STALE_CONNECTION_S:
                     self._log("warning", "no traffic for 60s — assuming connection stale")
                     break
+                # Periodic KeepAlive poll so the module keeps our session open.
+                if login_done and time.time() - last_keepalive > KEEPALIVE_INTERVAL_S:
+                    self.send_raw(encode_keepalive())
+                    last_keepalive = time.time()
                 continue
             except OSError as e:
                 self._log("warning", f"recv error: {e}")
@@ -332,6 +355,12 @@ class EnvisalinkClient:
                         self._auth_failed = True   # _run() sees this and stops retrying
                         self.on_login(LoginResult.FAILED)
                         return
+                    if text == "Timed Out!":
+                        # Module gave up waiting for the password — not a bad
+                        # credential, so reconnect rather than latching auth_failed.
+                        self._log("warning", "login timed out — will reconnect")
+                        self.on_login(LoginResult.TIMEOUT)
+                        break
                     # Some EVL firmware sends a welcome banner before the prompt — ignore
                     continue
 

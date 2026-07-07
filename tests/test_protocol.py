@@ -1,381 +1,278 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 # Filename:    test_protocol.py
-# Description: Pytest suite for honeywell_protocol.py — pure-function tests.
-#              Run from repo root with:   pytest -v tests/
-# Author:      Highsteads / CliveS & Claude
+# Description: Pytest suite for honeywell_protocol.py — the REAL Envisalink
+#              Honeywell TPI ($-terminated, no checksum, 16-bit keypad flags).
+#              Anchored to real-hardware captures from the beta tester.
+# Author:      Highsteads / CliveS & Claude Opus 4.8
 
 import sys
 import pytest
 from pathlib import Path
 
-# Make the plugin's source importable
 PLUGIN_SRC = Path(__file__).parent.parent / "HoneywellEnvisalink.indigoPlugin" / "Contents" / "Server Plugin"
 sys.path.insert(0, str(PLUGIN_SRC))
 
 from honeywell_protocol import (
-    tpi_checksum, verify_checksum, append_checksum,
     parse_frame, parse_keypad_update, parse_zone_state, parse_partition_state,
     parse_realtime_cid, derive_partition_state,
-    encode_login, encode_keystrokes, encode_disarm, encode_arm_away,
-    encode_arm_stay, encode_arm_instant, encode_arm_max, encode_bypass_zone,
-    encode_dump_zone_timers,
+    encode_login, encode_keepalive, encode_dump_zone_timers, encode_keypress,
+    encode_keystroke_sequence, encode_disarm, encode_arm_away, encode_arm_stay,
+    encode_arm_instant, encode_arm_max, encode_bypass_zone,
     redact_line_for_log,
-    KeypadUpdate, ZoneState, PartitionState,
-    LED_ARMED, LED_READY, LED_TROUBLE, LED_BYPASS, LED_AC_POWER, LED_ALARM, LED_ALARM_OCCURRED,
-    ProtocolError, ChecksumError,
+    ZoneBitmap, PartitionState,
+    FLAG_READY, FLAG_AC_PRESENT, FLAG_ARMED_AWAY, FLAG_ARMED_STAY,
+    FLAG_ARMED_NO_ENTRY, FLAG_ALARM, FLAG_ALARM_IN_MEMORY, FLAG_BYPASS,
+    FLAG_CHIME, FLAG_SYSTEM_TROUBLE,
+    ProtocolError,
 )
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# Checksum tests
+# REAL HARDWARE CAPTURES — beta tester, Vista 20P + EVL4, 07-Jul-2026.
+# These are the exact bytes that used to fail (frames_rx stayed 0). They are the
+# ground truth: if these ever fail to parse, the protocol model has regressed.
 # ────────────────────────────────────────────────────────────────────────────
 
-class TestChecksum:
-    def test_empty_string_is_zero(self):
-        assert tpi_checksum("") == "00"
+REAL_KEYPAD_DISARMED = "%00,01,1C08,08,00,****DISARMED****  Ready to Arm  $"
+REAL_CMD_RESPONSE    = "^FF,05$"
 
-    def test_single_char(self):
-        # ord('A') = 65 = 0x41
-        assert tpi_checksum("A") == "41"
 
-    def test_wraps_modulo_256(self):
-        # 256 'A's = 65 * 256 = 16640 → mod 256 = 0
-        assert tpi_checksum("A" * 256) == "00"
+class TestRealHardwareCaptures:
+    def test_real_keypad_frame_parses(self):
+        f = parse_frame(REAL_KEYPAD_DISARMED)
+        assert f.code == "%00"
+        ku = parse_keypad_update(f)
+        assert ku is not None
+        assert ku.partition == 1
+        assert ku.led_bitmap == 0x1C08
+        # 0x1C08 = ready + ac_present (+ two vendor 'not used' bits)
+        assert ku.ready is True
+        assert ku.ac_power is True
+        assert ku.armed is False
+        assert ku.alarm is False
+        assert "DISARMED" in ku.display_text
+        assert derive_partition_state(ku) == PartitionState.READY
 
-    def test_known_value(self):
-        # "00,1" → 0x30+0x30+0x2C+0x31 = 0xBD
-        assert tpi_checksum("00,1").upper() == "BD"
-
-    def test_verify_roundtrip(self):
-        payload = "00,11234A"
-        line = payload + tpi_checksum(payload)
-        assert verify_checksum(line) == payload
-
-    def test_verify_bad_checksum_raises(self):
-        with pytest.raises(ChecksumError):
-            verify_checksum("00,1ZZ")
-
-    def test_append_checksum(self):
-        assert append_checksum("AB") == "AB" + tpi_checksum("AB")
+    def test_real_command_response_does_not_crash(self):
+        # '^FF,05$' is a command response — every TYPED parser must return None
+        # (not raise). This is the frame that spammed checksum errors before.
+        f = parse_frame(REAL_CMD_RESPONSE)
+        assert f.code == "^FF"
+        assert parse_keypad_update(f) is None
+        assert parse_zone_state(f) is None
+        assert parse_partition_state(f) is None
+        assert parse_realtime_cid(f) is None
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# Frame parsing
+# Frame parsing — $ terminator, NO checksum
 # ────────────────────────────────────────────────────────────────────────────
 
 class TestParseFrame:
-    def test_login_prompt(self):
-        f = parse_frame("Login:")
-        assert f.code == "Login:"
+    def test_async_message(self):
+        f = parse_frame("%00,01,1008,00,00,Ready$")
+        assert f.code == "%00"
+        assert f.payload == "01,1008,00,00,Ready"
 
-    def test_login_ok(self):
-        f = parse_frame("OK")
-        assert f.code == "OK"
+    def test_command_response(self):
+        f = parse_frame("^00,00$")
+        assert f.code == "^00"
+        assert f.payload == "00"
 
-    def test_login_failed(self):
-        f = parse_frame("FAILED")
-        assert f.code == "FAILED"
+    def test_strips_crlf(self):
+        f = parse_frame("%02,0100000000000000$\r\n")
+        assert f.code == "%02"
+        assert f.payload == "0100000000000000"
 
-    def test_simple_server_frame(self):
-        payload = "00,01,01,000,00,Ready                              "
-        line = "%" + payload + tpi_checksum(payload)
-        f = parse_frame(line)
-        assert f.code == "00"
-        assert f.payload.startswith("01,01,000,00,Ready")
+    def test_login_tokens(self):
+        for tok in ("Login:", "OK", "FAILED", "Timed Out!"):
+            assert parse_frame(tok).code == tok
 
-    def test_client_frame_with_caret(self):
-        payload = "00,11234A"
-        line = "^" + payload + tpi_checksum(payload)
-        f = parse_frame(line)
-        assert f.code == "00"
-        assert f.payload == "11234A"
+    def test_no_checksum_expected(self):
+        # A trailing 2-char group is NOT a checksum — it's real payload.
+        f = parse_frame("%00,01,1C08,08,00,Ready to Arm$")
+        assert f.payload.endswith("Ready to Arm")
 
-    def test_empty_line_raises(self):
+    def test_unframed_line_raises(self):
         with pytest.raises(ProtocolError):
-            parse_frame("")
+            parse_frame("garbage with no dollar")
 
-    def test_blank_after_strip_raises(self):
+    def test_missing_terminator_raises(self):
+        with pytest.raises(ProtocolError):
+            parse_frame("%00,01,1008,00,00,Ready")   # no trailing $
+
+    def test_blank_raises(self):
         with pytest.raises(ProtocolError):
             parse_frame("\r\n")
 
-    def test_strips_crlf(self):
-        payload = "00,1"
-        line = "^" + payload + tpi_checksum(payload) + "\r\n"
-        f = parse_frame(line)
-        assert f.code == "00"
-
-    def test_skip_checksum_verify(self):
-        # For test fixtures that don't bother computing the checksum
-        f = parse_frame("%00,1,02,000,00,ARMED                              ZZ", verify_checksums=False)
-        assert f.code == "00"
-        assert f.payload.startswith("1,02,000,00,ARMED")
-
-    def test_bad_checksum_through_parse_frame_raises(self):
-        # A real frame with a corrupted checksum must raise ChecksumError when
-        # verification is on (the default for live traffic).
-        payload = "01,007,O"
-        good = "%" + payload + tpi_checksum(payload)
-        bad = good[:-2] + "ZZ"   # clobber the trailing checksum
-        with pytest.raises(ChecksumError):
-            parse_frame(bad)
-
 
 # ────────────────────────────────────────────────────────────────────────────
-# Keypad update parsing
+# Keypad update (%00) — 16-bit flag decoding
 # ────────────────────────────────────────────────────────────────────────────
 
-def make_keypad_frame(partition=1, led_hex="02", zone=0, beep=0,
-                      display="Ready                            "):
-    """Helper: build a properly-checksummed keypad update line for tests."""
-    display = display[:32].ljust(32)
-    payload = f"00,{partition},{led_hex},{zone:03d},{beep},{display}"
-    return "%" + payload + tpi_checksum(payload)
+def keypad(flags, partition=1, zone=0, beep=0, text="Ready to Arm"):
+    line = f"%00,{partition:02d},{flags:04X},{zone:02d},{beep:02d},{text}$"
+    return parse_keypad_update(parse_frame(line))
 
 
-class TestKeypadUpdate:
-    def test_basic_ready(self):
-        line = make_keypad_frame(led_hex=f"{LED_READY:02X}",
-                                  display="Ready                            ")
-        ku = parse_keypad_update(parse_frame(line))
-        assert ku is not None
-        assert ku.partition == 1
-        assert ku.ready
-        assert not ku.armed
-        assert ku.display_text.startswith("Ready")
+class TestKeypadFlags:
+    def test_ready(self):
+        ku = keypad(FLAG_READY | FLAG_AC_PRESENT)
+        assert ku.ready and ku.ac_power and not ku.armed
 
     def test_armed_away(self):
-        line = make_keypad_frame(led_hex=f"{LED_ARMED:02X}",
-                                  display="ARMED ***AWAY***                 ")
-        ku = parse_keypad_update(parse_frame(line))
-        assert ku.armed
-        assert not ku.ready
+        ku = keypad(FLAG_ARMED_AWAY | FLAG_AC_PRESENT, text="ARMED ***AWAY***")
+        assert ku.armed_away and ku.armed and not ku.ready
 
-    def test_combined_leds(self):
-        bits = LED_ARMED | LED_AC_POWER | LED_BYPASS
-        line = make_keypad_frame(led_hex=f"{bits:02X}",
-                                  display="ARMED BYPASS                     ")
-        ku = parse_keypad_update(parse_frame(line))
-        assert ku.armed and ku.ac_power and ku.bypass
-        assert not ku.ready
+    def test_armed_stay(self):
+        ku = keypad(FLAG_ARMED_STAY | FLAG_AC_PRESENT, text="ARMED ***STAY***")
+        assert ku.armed_stay and ku.armed
 
-    def test_alarm_flag(self):
-        line = make_keypad_frame(led_hex=f"{LED_ALARM:02X}",
-                                  display="ALARM ZONE 2                     ")
-        ku = parse_keypad_update(parse_frame(line))
+    def test_alarm(self):
+        ku = keypad(FLAG_ALARM | FLAG_ARMED_AWAY, text="ALARM 05")
         assert ku.alarm
 
-    def test_returns_none_for_non_keypad_frame(self):
-        # Zone-state-change frame
-        payload = "01,005,O"
-        line = "%" + payload + tpi_checksum(payload)
-        assert parse_keypad_update(parse_frame(line)) is None
+    def test_bypass_and_chime(self):
+        ku = keypad(FLAG_READY | FLAG_BYPASS | FLAG_CHIME)
+        assert ku.bypass and ku.chime
 
     def test_short_00_frame_returns_none(self):
-        # TPI code "00" is overloaded (keypad update AND keep-alive). A short
-        # "00" frame (too few fields to be a keypad update) must return None —
-        # treated as an uninteresting keep-alive — NOT raise, so it doesn't spam
-        # "frame handler error" warnings on real hardware.
-        payload = "00,1,02"
-        line = "%" + payload + tpi_checksum(payload)
-        assert parse_keypad_update(parse_frame(line)) is None
+        # An overloaded short "%00" (e.g. a poll echo) is not a keypad update.
+        assert parse_keypad_update(parse_frame("%00,01$")) is None
 
-    def test_bare_00_keepalive_returns_none(self):
-        payload = "00,"
-        line = "%" + payload + tpi_checksum(payload)
-        assert parse_keypad_update(parse_frame(line)) is None
-
-    def test_non_hex_led_raises(self):
-        # A 5-field "00" frame with a non-hex LED byte is a genuinely malformed
-        # keypad update and must still raise.
-        payload = "00,1,ZZ,000,0,Ready"
-        line = "%" + payload + tpi_checksum(payload)
+    def test_non_hex_flags_raises(self):
         with pytest.raises(ProtocolError):
-            parse_keypad_update(parse_frame(line))
+            parse_keypad_update(parse_frame("%00,01,ZZZZ,00,00,Ready$"))
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# Zone state parsing
-# ────────────────────────────────────────────────────────────────────────────
-
-class TestZoneState:
-    @pytest.mark.parametrize("char,expected", [
-        ("O", ZoneState.OPEN),
-        ("C", ZoneState.CLOSED),
-        ("B", ZoneState.BYPASS),
-        ("T", ZoneState.TROUBLE),
-        ("A", ZoneState.ALARM),
-        ("X", ZoneState.UNKNOWN),
-    ])
-    def test_states(self, char, expected):
-        payload = f"01,007,{char}"
-        line = "%" + payload + tpi_checksum(payload)
-        zsc = parse_zone_state(parse_frame(line))
-        assert zsc is not None
-        assert zsc.zone == 7
-        assert zsc.state == expected
-
-    def test_three_digit_zone(self):
-        payload = "01,142,O"
-        line = "%" + payload + tpi_checksum(payload)
-        zsc = parse_zone_state(parse_frame(line))
-        assert zsc.zone == 142
-
-    def test_high_zone_number(self):
-        payload = "01,250,O"   # Vista 250BP max zone
-        line = "%" + payload + tpi_checksum(payload)
-        zsc = parse_zone_state(parse_frame(line))
-        assert zsc.zone == 250
-
-    def test_non_numeric_zone_raises(self):
-        payload = "01,ABC,O"
-        line = "%" + payload + tpi_checksum(payload)
-        with pytest.raises(ProtocolError):
-            parse_zone_state(parse_frame(line))
-
-
-# ────────────────────────────────────────────────────────────────────────────
-# Partition state parsing
-# ────────────────────────────────────────────────────────────────────────────
-
-class TestPartitionState:
-    @pytest.mark.parametrize("code,expected", [
-        ("READY",         PartitionState.READY),
-        ("NOT_READY",     PartitionState.NOT_READY),
-        ("ARMED_AWAY",    PartitionState.ARMED_AWAY),
-        ("ARMED_STAY",    PartitionState.ARMED_STAY),
-        ("ARMED_INSTANT", PartitionState.ARMED_INSTANT),
-        ("ARMED_MAX",     PartitionState.ARMED_MAX),
-        ("ENTRY_DELAY",   PartitionState.ENTRY_DELAY),
-        ("EXIT_DELAY",    PartitionState.EXIT_DELAY),
-        ("ALARM",         PartitionState.ALARM),
-        ("TROUBLE",       PartitionState.TROUBLE),
-        ("BOGUS",         PartitionState.UNKNOWN),
-    ])
-    def test_states(self, code, expected):
-        payload = f"02,1,{code}"
-        line = "%" + payload + tpi_checksum(payload)
-        psc = parse_partition_state(parse_frame(line))
-        assert psc.partition == 1
-        assert psc.state == expected
-
-    @pytest.mark.parametrize("partition", [1, 2, 3])
-    def test_multi_partition(self, partition):
-        payload = f"02,{partition},ARMED_AWAY"
-        line = "%" + payload + tpi_checksum(payload)
-        psc = parse_partition_state(parse_frame(line))
-        assert psc.partition == partition
-        assert psc.state == PartitionState.ARMED_AWAY
-
-    def test_non_numeric_partition_raises(self):
-        payload = "02,X,READY"
-        line = "%" + payload + tpi_checksum(payload)
-        with pytest.raises(ProtocolError):
-            parse_partition_state(parse_frame(line))
-
-
-# ────────────────────────────────────────────────────────────────────────────
-# Derived partition state from keypad text (fallback path)
+# derive_partition_state — LED flags + display text
 # ────────────────────────────────────────────────────────────────────────────
 
 class TestDerivedState:
     def test_ready(self):
-        ku = KeypadUpdate(1, LED_READY, 0, 0, "Ready                            ")
-        assert derive_partition_state(ku) == PartitionState.READY
+        assert derive_partition_state(keypad(FLAG_READY)) == PartitionState.READY
 
-    def test_armed_away_default(self):
-        ku = KeypadUpdate(1, LED_ARMED, 0, 0, "ARMED ***AWAY***                 ")
+    def test_armed_away(self):
+        ku = keypad(FLAG_ARMED_AWAY, text="ARMED ***AWAY***")
         assert derive_partition_state(ku) == PartitionState.ARMED_AWAY
 
     def test_armed_stay(self):
-        ku = KeypadUpdate(1, LED_ARMED, 0, 0, "ARMED ***STAY***                 ")
+        ku = keypad(FLAG_ARMED_STAY, text="ARMED ***STAY***")
         assert derive_partition_state(ku) == PartitionState.ARMED_STAY
 
-    def test_armed_instant(self):
-        ku = KeypadUpdate(1, LED_ARMED, 0, 0, "ARMED **INSTANT**                ")
+    def test_armed_instant_from_text(self):
+        ku = keypad(FLAG_ARMED_AWAY | FLAG_ARMED_NO_ENTRY, text="ARMED ***INSTANT***")
+        assert derive_partition_state(ku) == PartitionState.ARMED_INSTANT
+
+    def test_armed_max_from_text(self):
+        ku = keypad(FLAG_ARMED_AWAY | FLAG_ARMED_NO_ENTRY, text="ARMED **MAXIMUM**")
+        assert derive_partition_state(ku) == PartitionState.ARMED_MAX
+
+    def test_armed_no_entry_without_text_is_instant(self):
+        ku = keypad(FLAG_ARMED_NO_ENTRY, text="ARMED")
         assert derive_partition_state(ku) == PartitionState.ARMED_INSTANT
 
     def test_exit_delay(self):
-        ku = KeypadUpdate(1, LED_ARMED, 0, 1, "ARMED MAY EXIT NOW               ")
+        ku = keypad(FLAG_ARMED_AWAY, text="ARMED ***AWAY*** May Exit Now")
         assert derive_partition_state(ku) == PartitionState.EXIT_DELAY
 
-    def test_alarm_overrides(self):
-        ku = KeypadUpdate(1, LED_ALARM | LED_ARMED, 0, 1, "ALARM                            ")
-        assert derive_partition_state(ku) == PartitionState.ALARM
-
-    def test_armed_max(self):
-        ku = KeypadUpdate(1, LED_ARMED, 0, 0, "ARMED ***MAXIMUM***              ")
-        assert derive_partition_state(ku) == PartitionState.ARMED_MAX
-
-    def test_armed_stay_not_misread_as_max(self):
-        # Regression: the old code matched a bare "MAX" substring before "STAY".
-        ku = KeypadUpdate(1, LED_ARMED, 0, 0, "ARMED ***STAY***                 ")
-        assert derive_partition_state(ku) == PartitionState.ARMED_STAY
-
-    def test_alarm_memory_from_led_bit(self):
-        # LED_ALARM_OCCURRED (0x40) alone, no live alarm, no text — should derive
-        # ALARM_MEMORY (regression: that LED bit used to be defined but never read).
-        ku = KeypadUpdate(1, LED_ALARM_OCCURRED | LED_READY, 0, 0, "Ready                  ")
-        assert derive_partition_state(ku) == PartitionState.ALARM_MEMORY
-
     def test_entry_delay(self):
-        ku = KeypadUpdate(1, LED_ARMED, 0, 1, "DISARM SYSTEM OR ALARM           ")
+        ku = keypad(FLAG_ARMED_AWAY, text="DISARM SYSTEM OR ALARM")
         assert derive_partition_state(ku) == PartitionState.ENTRY_DELAY
 
+    def test_alarm_overrides(self):
+        ku = keypad(FLAG_ALARM | FLAG_ARMED_AWAY, text="ALARM")
+        assert derive_partition_state(ku) == PartitionState.ALARM
+
+    def test_alarm_memory_from_flag(self):
+        ku = keypad(FLAG_ALARM_IN_MEMORY | FLAG_READY, text="Ready")
+        assert derive_partition_state(ku) == PartitionState.ALARM_MEMORY
+
     def test_trouble(self):
-        ku = KeypadUpdate(1, LED_TROUBLE, 0, 0, "Check 03                         ")
+        ku = keypad(FLAG_SYSTEM_TROUBLE, text="Check 03")
         assert derive_partition_state(ku) == PartitionState.TROUBLE
 
     def test_not_ready(self):
-        ku = KeypadUpdate(1, 0x00, 0, 0, "Not Ready Fault 02               ")
+        ku = keypad(0x0000, text="Not Ready Fault 02")
         assert derive_partition_state(ku) == PartitionState.NOT_READY
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# Real-time CID
+# Partition state (%02) — 8 partitions, 2 hex chars each
+# ────────────────────────────────────────────────────────────────────────────
+
+class TestPartitionState:
+    def test_single_partition_ready(self):
+        changes = parse_partition_state(parse_frame("%02,0100000000000000$"))
+        assert len(changes) == 1
+        assert changes[0].partition == 1
+        assert changes[0].state == PartitionState.READY
+
+    def test_status_code_mapping(self):
+        cases = {
+            "01": PartitionState.READY, "03": PartitionState.NOT_READY,
+            "04": PartitionState.ARMED_STAY, "05": PartitionState.ARMED_AWAY,
+            "06": PartitionState.ARMED_MAX, "07": PartitionState.EXIT_ENTRY_DELAY,
+            "08": PartitionState.ALARM, "09": PartitionState.ALARM_MEMORY,
+        }
+        for code, expected in cases.items():
+            data = code + "00" * 7
+            changes = parse_partition_state(parse_frame(f"%02,{data}$"))
+            assert changes[0].state == expected
+
+    def test_multiple_partitions(self):
+        # Partition 1 armed away, partition 2 ready, rest unused
+        changes = parse_partition_state(parse_frame("%02,0501000000000000$"))
+        assert {c.partition: c.state for c in changes} == {
+            1: PartitionState.ARMED_AWAY, 2: PartitionState.READY}
+
+    def test_all_unused_is_empty(self):
+        assert parse_partition_state(parse_frame("%02,0000000000000000$")) == []
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Zone bitmap (%01)
+# ────────────────────────────────────────────────────────────────────────────
+
+class TestZoneBitmap:
+    def test_no_zones_open(self):
+        zb = parse_zone_state(parse_frame("%01,0000000000000000$"))
+        assert isinstance(zb, ZoneBitmap)
+        assert zb.open_zones == set()
+
+    def test_zone_one_open(self):
+        # First 16-bit chunk, byte-swapped: 0100 -> 0x0001 -> bit0 -> zone 1
+        zb = parse_zone_state(parse_frame("%01,0100000000000000$"))
+        assert 1 in zb.open_zones
+
+    def test_empty_raises(self):
+        with pytest.raises(ProtocolError):
+            parse_zone_state(parse_frame("%01,$"))
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Real-time CID (%03)
 # ────────────────────────────────────────────────────────────────────────────
 
 class TestRealtimeCID:
-    def test_burglary_concatenated(self):
-        # Concatenated form: Qualifier=1 (new), code=130, partition=01, zone=0007
-        payload = "03,1130010007"
-        line = "%" + payload + tpi_checksum(payload)
-        cid = parse_realtime_cid(parse_frame(line))
-        assert cid.qualifier == 1
-        assert cid.event_code == 130
-        assert cid.partition == 1
-        assert cid.zone_or_user == 7
+    def test_concatenated(self):
+        # Q(1) EEE(3) PP(2) ZZZ(3) = 9 chars: qual 1, event 130, partition 01, zone 005
+        cid = parse_realtime_cid(parse_frame("%03,113001005$"))
+        assert (cid.qualifier, cid.event_code, cid.partition, cid.zone_or_user) == (1, 130, 1, 5)
 
-    def test_burglary_comma_form(self):
-        # Comma-delimited firmware variant: Q,XXX,PP,ZZZZ
-        payload = "03,1,130,01,0007"
-        line = "%" + payload + tpi_checksum(payload)
-        cid = parse_realtime_cid(parse_frame(line))
-        assert cid.qualifier == 1
-        assert cid.event_code == 130
-        assert cid.partition == 1
-        assert cid.zone_or_user == 7
+    def test_comma_form(self):
+        cid = parse_realtime_cid(parse_frame("%03,1,130,01,005$"))
+        assert (cid.qualifier, cid.event_code, cid.partition, cid.zone_or_user) == (1, 130, 1, 5)
 
-    def test_comma_form_unpadded_fields(self):
-        # Regression: comma-stripping + fixed slicing mis-attributed un-padded
-        # fields. Positional comma-split must read them correctly.
-        payload = "03,3,401,1,42"   # qualifier 3 (restore), user/installer code 401, partition 1, user 42
-        line = "%" + payload + tpi_checksum(payload)
-        cid = parse_realtime_cid(parse_frame(line))
-        assert cid.qualifier == 3
-        assert cid.event_code == 401
-        assert cid.partition == 1
-        assert cid.zone_or_user == 42
-
-    def test_short_cid_raises(self):
-        payload = "03,12"
-        line = "%" + payload + tpi_checksum(payload)
+    def test_short_raises(self):
         with pytest.raises(ProtocolError):
-            parse_realtime_cid(parse_frame(line))
+            parse_realtime_cid(parse_frame("%03,12$"))
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# Encoding
+# Encoding — ^CC,DATA$  (no checksum); keystrokes one char per command
 # ────────────────────────────────────────────────────────────────────────────
 
 class TestEncoding:
@@ -386,94 +283,67 @@ class TestEncoding:
         with pytest.raises(ValueError):
             encode_login("")
 
-    def test_keystrokes_basic(self):
-        line = encode_keystrokes("1234A", partition=1)
-        # Must start with ^, end with \r\n, contain a checksum
-        assert line.startswith("^")
-        assert line.endswith("\r\n")
-        # Round-trip through parse
-        f = parse_frame(line.rstrip("\r\n"))
-        assert f.code == "00"
-        assert f.payload == "11234A"
+    def test_keepalive(self):
+        assert encode_keepalive() == "^00,$\r\n"
 
-    def test_keystrokes_partition_out_of_range(self):
+    def test_dump_zone_timers(self):
+        assert encode_dump_zone_timers() == "^02,$\r\n"
+
+    def test_keypress(self):
+        assert encode_keypress(1, "5") == "^03,1,5$\r\n"
+
+    def test_keypress_bad_partition(self):
         with pytest.raises(ValueError):
-            encode_keystrokes("1234A", partition=99)
+            encode_keypress(9, "5")
 
-    def test_arm_disarm_helpers(self):
-        for fn in (encode_disarm, encode_arm_away, encode_arm_stay):
-            line = fn("1234", partition=1)
-            assert line.startswith("^00,1")
-            assert line.endswith("\r\n")
+    def test_keypress_multichar_raises(self):
+        with pytest.raises(ValueError):
+            encode_keypress(1, "55")
 
-    def test_bypass_includes_zone(self):
-        line = encode_bypass_zone("1234", zone=5)
-        f = parse_frame(line.rstrip("\r\n"))
-        # Bypass keystrokes: code + '6' + 2-digit zone
-        assert f.payload == "11234605"
+    def test_sequence_is_one_command_per_char(self):
+        seq = encode_keystroke_sequence("1234", partition=2)
+        assert seq == ["^03,2,1$\r\n", "^03,2,2$\r\n", "^03,2,3$\r\n", "^03,2,4$\r\n"]
+
+    def test_disarm_appends_key_1(self):
+        seq = encode_disarm("1234", partition=1)
+        assert seq[-1] == "^03,1,1$\r\n"      # last keystroke is the disarm key
+        assert len(seq) == 5                  # 4 code digits + 1 key
+
+    def test_arm_helpers_append_correct_key(self):
+        assert encode_arm_away("1234")[-1]    == "^03,1,2$\r\n"
+        assert encode_arm_stay("1234")[-1]    == "^03,1,3$\r\n"
+        assert encode_arm_max("1234")[-1]     == "^03,1,4$\r\n"
+        assert encode_arm_instant("1234")[-1] == "^03,1,7$\r\n"
+
+    def test_bypass_zone(self):
+        seq = encode_bypass_zone("1234", zone=5, partition=1)
+        # code(4) + bypass key '6' + zone '05' = 7 keystrokes
+        assert len(seq) == 7
+        assert [c[len("^03,1,")] for c in seq] == list("1234605")
 
     def test_bypass_out_of_range(self):
         with pytest.raises(ValueError):
             encode_bypass_zone("1234", zone=999)
 
-    def test_arm_instant_and_max_helpers(self):
-        # Instant key = '7', Max key = '4' appended to the code
-        assert parse_frame(encode_arm_instant("1234", 1).rstrip("\r\n")).payload == "112347"
-        assert parse_frame(encode_arm_max("1234", 1).rstrip("\r\n")).payload == "112344"
-
-    def test_six_digit_code_encodes(self):
-        f = parse_frame(encode_disarm("123456", partition=1).rstrip("\r\n"))
-        assert f.payload == "11234561"   # partition 1 + code 123456 + disarm key 1
-
-    def test_multi_partition_keystrokes(self):
-        for p in (1, 2, 3):
-            f = parse_frame(encode_arm_away("1234", partition=p).rstrip("\r\n"))
-            assert f.payload == f"{p}12342"
-
-    def test_dump_zone_timers(self):
-        line = encode_dump_zone_timers()
-        f = parse_frame(line.rstrip("\r\n"))
-        assert f.code == "FF"
-
 
 # ────────────────────────────────────────────────────────────────────────────
-# Secrets redaction — vital: user codes must never appear in logs
+# Redaction — the user code goes out one digit per ^03 command
 # ────────────────────────────────────────────────────────────────────────────
 
 class TestRedaction:
-    def test_keystroke_code_redacted(self):
-        line = "^00,11234A57"
-        assert "1234" not in redact_line_for_log(line)
-        assert "****" in redact_line_for_log(line)
+    def test_keypress_digit_masked(self):
+        assert redact_line_for_log("^03,1,4$") == "^03,1,*$"
 
-    def test_six_digit_code_redacted(self):
-        line = "^00,1987654A57"
-        assert "987654" not in redact_line_for_log(line)
+    def test_full_sequence_masks_every_digit(self):
+        for cmd in encode_disarm("1234", partition=1):
+            out = redact_line_for_log(cmd)
+            # no bare digit remains in the keypress position
+            assert "*" in out
 
-    def test_inbound_lines_untouched(self):
-        line = "%00,01,02,000,00,Ready                            FF"
+    def test_inbound_not_touched(self):
+        line = "%00,01,1C08,08,00,****DISARMED****  Ready to Arm  $"
         assert redact_line_for_log(line) == line
 
-    def test_non_code_numbers_left_alone(self):
-        # Zone-timer dump has lots of digits — must not be mangled
-        line = "%FF,000000000000FF"
-        assert redact_line_for_log(line) == line
-
-    def test_bypass_command_code_redacted(self):
-        # ^00,P<code>6<zone> — the user code must be masked
-        line = encode_bypass_zone("1234", zone=5).rstrip("\r\n")
-        out = redact_line_for_log(line)
-        assert "1234" not in out
-        assert "****" in out
-
-    def test_multi_partition_code_redacted(self):
-        line = encode_arm_away("123456", partition=3).rstrip("\r\n")
-        out = redact_line_for_log(line)
-        assert "123456" not in out
-
-    def test_bare_line_passes_through(self):
-        # redact_line_for_log only masks ^00 keystroke codes; a bare login line
-        # is NOT its job — that is masked at source in envisalink_client (see
-        # test_client.py). Confirm it is left untouched here so the client's
-        # direction-aware handling is the single source of truth.
-        assert redact_line_for_log("user") == "user"
+    def test_non_digit_key_left_alone(self):
+        # '*' and '#' function keys are not codes — leave them visible
+        assert redact_line_for_log("^03,1,#$") == "^03,1,#$"

@@ -68,13 +68,14 @@ class TestCredentialRedaction:
             assert SECRET not in line
         assert SECRET not in log.all_text()
 
-    def test_tx_keystroke_code_redacted(self):
+    def test_tx_keypress_digit_redacted(self):
+        # A user-code digit goes out as ^03,<part>,<digit>$ — mask the digit.
         client, log = make_client()
-        client._record_debug("TX", "^00,11234A57")
+        client._record_debug("TX", "^03,1,7$")
         buf = client.get_debug_log()
         joined = "\n".join(line for _ts, _d, line in buf)
-        assert "1234" not in joined
-        assert "****" in joined
+        assert "^03,1,*" in joined
+        assert "^03,1,7" not in joined
 
     def test_rx_frame_recorded(self):
         client, _log = make_client()
@@ -99,14 +100,15 @@ class TestSendRawGuard:
     def test_send_dropped_when_not_connected(self):
         client, _log = make_client()
         # Never started → not connected, no socket
-        assert client.send_raw("^00,11234A57\r\n") is False
+        assert client.send_raw("^03,1,7$\r\n") is False
 
     def test_dropped_send_log_redacts_user_code(self):
         client, log = make_client()
-        client.send_raw("^00,11234A57\r\n")
+        client.send_raw("^03,1,7$\r\n")
         text = log.all_text()
         assert "send dropped" in text
-        assert "1234" not in text   # the user code must not leak into the warning
+        assert "^03,1,7" not in text   # the keypress digit must not leak into the warning
+        assert "^03,1,*" in text
 
 
 # ────────────────────────────────────────────────────────────────────────────
