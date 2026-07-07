@@ -6,7 +6,7 @@
 #              Pure functions for easy testing with mock data.
 # Author:      Highsteads / CliveS & Claude Opus 4.8
 # Date:        07-07-2026
-# Version:     0.4.0-beta
+# Version:     0.4.1-beta
 #
 # References used to build this:
 #   - Eyez-On Envisalink TPI specification (Honeywell)
@@ -322,10 +322,14 @@ def parse_keypad_update(frame: RawFrame) -> Optional[KeypadUpdate]:
     try:
         partition = int(parts[0])
         flags     = int(parts[1], 16)
-        zone      = int(parts[2]) if parts[2].strip() else 0
-        beep      = int(parts[3]) if parts[3].strip() else 0
     except ValueError as e:
-        raise ProtocolError(f"keypad update field parse error: {e}") from e
+        raise ProtocolError(f"keypad update partition/flags parse error: {e}") from e
+    # zone and beep are informational. Some frames put non-decimal values here —
+    # e.g. a real Vista sends "%00,01,0008,CA,20,Alarm Canceled" — so tolerate
+    # them (default 0) rather than dropping the whole frame; the flags and display
+    # text are what actually drive the partition state.
+    zone = int(parts[2]) if parts[2].strip().isdigit() else 0
+    beep = int(parts[3]) if parts[3].strip().isdigit() else 0
     display = parts[4][:32]
     return KeypadUpdate(partition=partition, led_bitmap=flags, zone=zone,
                         beep_code=beep, display_text=display)

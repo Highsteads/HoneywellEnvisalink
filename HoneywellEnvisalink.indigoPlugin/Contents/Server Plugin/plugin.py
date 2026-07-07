@@ -5,7 +5,7 @@
 #              alarm panels to Indigo via Envisalink network modules (EVL3/EVL4).
 # Author:      Highsteads / CliveS & Claude Opus 4.8
 # Date:        07-07-2026
-# Version:     0.4.0-beta
+# Version:     0.4.1-beta
 # Plugin ID:   com.clives.indigoplugin.honeywell-envisalink
 
 import os as _os
@@ -44,7 +44,7 @@ try:
 except ImportError:
     ENVISALINK_PASSWORD = ""
 
-PLUGIN_VERSION = "0.4.0-beta"
+PLUGIN_VERSION = "0.4.1-beta"
 PLUGIN_ID = "com.clives.indigoplugin.honeywell-envisalink"
 
 DEFAULT_PORT = 4025
@@ -404,6 +404,11 @@ class Plugin(indigo.PluginBase):
     def _handle_partition_state(self, changes):
         # A %02 message carries the status of every partition at once.
         for psc in changes:
+            # Don't let an unrecognised %02 status code (e.g. real panels emit
+            # '0A' while arming instant, which isn't in the documented table)
+            # clobber the good state derived from the %00 keypad stream.
+            if psc.state == PartitionState.UNKNOWN:
+                continue
             dev = self.partition_devs.get(psc.partition)
             if not dev:
                 continue

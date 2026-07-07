@@ -7,7 +7,7 @@
 #              in both directions (with user codes redacted).
 # Author:      Highsteads / CliveS & Claude Opus 4.8
 # Date:        07-07-2026
-# Version:     0.4.0-beta
+# Version:     0.4.1-beta
 
 import socket
 import threading

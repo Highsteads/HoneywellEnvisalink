@@ -1,12 +1,11 @@
 # HoneywellEnvisalink
 
-> # 🚧 BETA — v0.4.0-beta — protocol corrected against real hardware, with a one-click data-capture built into the plugin
+> # 🚧 BETA — v0.4.1-beta — state-reading now confirmed on a real Honeywell panel
 >
-> The first real-hardware run finally happened (a tester on a Vista 20P with an EVL4), and it turned up a fundamental problem: the first releases were
-> built against the wrong idea of the Honeywell Envisalink wire format, so on a real panel the plugin read the connection but parsed zero frames. That is
-> **fixed in v0.3.0-beta** — the protocol has been rewritten to the actual Envisalink TPI that real panels speak, verified against the tester's own captured
-> frames. State-reading should now work. What still needs confirming on real hardware is the finer detail (individual zone open/close, and the arm/disarm
-> commands with test mode off), which is why this is still a beta looking for pilots.
+> A tester on a **Vista 20P with an EVL4** has now run a full capture on real hardware, and the plugin read the panel correctly all the way through: ready,
+> arm stay, arm away, exit delay, **alarm and alarm-memory**, disarm and arm-instant, plus the right **zones** showing open. So the hard part — reading a real
+> Honeywell panel — is working. The one thing still to confirm is the **outgoing arm/disarm commands** (sending, with test mode off), which no tester has
+> exercised yet, so this is still a beta looking for a pilot to try that last piece.
 >
 > **Do not install this on a panel you depend on for security without reading the [Safety design](#safety-design) section first.** Test mode is on by
 > default for exactly this reason.
@@ -14,6 +13,10 @@
 > If you've got Honeywell hardware and are up for being a beta tester, see [Testing & debugging from afar](#testing--debugging-from-afar) below.
 
 An [Indigo Domotics](https://www.indigodomo.com) plugin that connects **Honeywell Vista alarm panels** to Indigo via an **Envisalink** network module.
+
+## What's new in v0.4.1-beta
+
+First real capture off a live Vista 20P, and the plugin read the whole thing correctly — every armed state, the alarm and alarm-memory, the disarm, and the right zones open. One small fix came out of it: the panel sends a special "Alarm Canceled" keypad line with a couple of non-numeric fields, which the parser was throwing away. It now takes that in its stride (and every real frame from the capture is baked into the test suite so it can't regress). Reading a real panel is now confirmed working — the remaining unknown is only the outgoing arm/disarm side.
 
 ## What's new in v0.4.0-beta
 
@@ -90,7 +93,7 @@ Alarm panels are not lights — getting it wrong has real consequences. The plug
 
 ## Testing & debugging from afar
 
-I (the author) don't have a Honeywell panel to test against, which is why this is a v0.4.0-beta explicitly looking for test pilots. To make remote debugging
+I (the author) don't have a Honeywell panel to test against, which is why this is a v0.4.1-beta explicitly looking for test pilots. To make remote debugging
 tractable, the plugin ships with:
 
 ### Capture protocol data for me (the most useful thing you can do)

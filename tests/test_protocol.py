@@ -65,6 +65,70 @@ class TestRealHardwareCaptures:
         assert parse_realtime_cid(f) is None
 
 
+class TestRealHardware20PCapture:
+    """Frames from the 07-Jul-2026 guided capture (Vista 20P + EVL4). Regression
+    fixtures — if these decode wrongly, real-hardware behaviour has broken."""
+
+    def _ku(self, line):
+        return parse_keypad_update(parse_frame(line))
+
+    def test_alarm_canceled_non_decimal_zone_field(self):
+        # The 7 frames that used to be dropped: zone='CA', beep='20'. Must parse
+        # now (tolerant zone/beep) and derive a real state from the flags.
+        ku = self._ku("%00,01,0008,CA,20,Alarm Canceled                  $")
+        assert ku is not None
+        assert ku.zone == 0                       # non-decimal tolerated
+        assert derive_partition_state(ku) == PartitionState.NOT_READY
+        assert "Alarm Canceled" in ku.display_text
+
+    def test_real_zone_bitmap_two_zones(self):
+        zb = parse_zone_state(parse_frame("%01,88000000000000000000000000000000$"))
+        assert zb.open_zones == {4, 8}            # confirmed on real hardware
+
+    def test_real_zone_bitmap_one_zone(self):
+        zb = parse_zone_state(parse_frame("%01,08000000000000000000000000000000$"))
+        assert zb.open_zones == {4}
+
+    @pytest.mark.parametrize("code,expected", [
+        ("04", PartitionState.ARMED_STAY), ("05", PartitionState.ARMED_AWAY),
+        ("08", PartitionState.ALARM), ("09", PartitionState.ALARM_MEMORY),
+        ("0A", PartitionState.UNKNOWN),           # real code we don't yet map
+    ])
+    def test_real_partition_codes(self, code, expected):
+        changes = parse_partition_state(parse_frame(f"%02,{code}00000000000000$"))
+        assert changes[0].state == expected
+
+    def test_real_alarm_frame(self):
+        ku = self._ku("%00,01,000F,08,00,ALARM 08 LIVING ROOM MOTION     $")
+        assert ku.alarm and derive_partition_state(ku) == PartitionState.ALARM
+
+    def test_real_alarm_memory_frame(self):
+        ku = self._ku("%00,01,000A,08,00,ALARM 08 LIVING ROOM MOTION     $")
+        assert derive_partition_state(ku) == PartitionState.ALARM_MEMORY
+
+    def test_real_armed_away_exit_delay(self):
+        ku = self._ku("%00,01,0C0C,08,00,ARMED ***AWAY***You may exit now$")
+        assert ku.armed_away and derive_partition_state(ku) == PartitionState.EXIT_DELAY
+
+    def test_real_armed_instant_exit_delay(self):
+        ku = self._ku("%00,01,8C88,08,00,ARMED *INSTANT* You may exit now$")
+        assert ku.armed_no_entry and derive_partition_state(ku) == PartitionState.EXIT_DELAY
+
+    def test_real_disarmed_not_ready(self):
+        ku = self._ku("%00,01,0C08,08,00,****DISARMED****Hit * for faults$")
+        assert derive_partition_state(ku) == PartitionState.NOT_READY
+
+    def test_real_zone_timer_dump_has_timers(self):
+        # A real %FF dump (truncated) decodes into per-zone words.
+        payload = "000060FE000000009FFDDEEC0000FCFFB7FF00003AF2"
+        timers = decode_zone_timer_dump(payload)
+        assert timers[2] == 0xFE60 and 5 in timers and 6 in timers
+
+    def test_real_cid_disarm_event(self):
+        cid = parse_realtime_cid(parse_frame("%03,1401010030$"))
+        assert cid.qualifier == 1 and cid.event_code == 401
+
+
 # ────────────────────────────────────────────────────────────────────────────
 # Frame parsing — $ terminator, NO checksum
 # ────────────────────────────────────────────────────────────────────────────
