@@ -19,7 +19,7 @@ from honeywell_protocol import (
     encode_login, encode_keepalive, encode_dump_zone_timers, encode_keypress,
     encode_keystroke_sequence, encode_disarm, encode_arm_away, encode_arm_stay,
     encode_arm_instant, encode_arm_max, encode_bypass_zone,
-    redact_line_for_log,
+    redact_line_for_log, flag_names, decode_zone_timer_dump,
     ZoneBitmap, PartitionState,
     FLAG_READY, FLAG_AC_PRESENT, FLAG_ARMED_AWAY, FLAG_ARMED_STAY,
     FLAG_ARMED_NO_ENTRY, FLAG_ALARM, FLAG_ALARM_IN_MEMORY, FLAG_BYPASS,
@@ -114,6 +114,21 @@ class TestParseFrame:
 def keypad(flags, partition=1, zone=0, beep=0, text="Ready to Arm"):
     line = f"%00,{partition:02d},{flags:04X},{zone:02d},{beep:02d},{text}$"
     return parse_keypad_update(parse_frame(line))
+
+
+class TestFlagNames:
+    def test_known_flags(self):
+        names = flag_names(FLAG_READY | FLAG_AC_PRESENT)
+        assert "ready" in names and "ac_present" in names
+
+    def test_real_capture_surfaces_unknown_bits(self):
+        # 0x1C08 = ready + ac_present + 0x0C00 (two vendor 'not used' bits)
+        names = flag_names(0x1C08)
+        assert "ready" in names and "ac_present" in names
+        assert "unknown(0x0C00)" in names
+
+    def test_no_flags(self):
+        assert flag_names(0x0000) == []
 
 
 class TestKeypadFlags:
@@ -235,6 +250,16 @@ class TestPartitionState:
 # ────────────────────────────────────────────────────────────────────────────
 # Zone bitmap (%01)
 # ────────────────────────────────────────────────────────────────────────────
+
+class TestZoneTimerDump:
+    def test_little_endian_words_nonzero_only(self):
+        # zone1 0100->0x0001, zone2 0000->skip, zone3 3412->0x1234
+        timers = decode_zone_timer_dump("010000003412")
+        assert timers == {1: 1, 3: 0x1234}
+
+    def test_all_zero_is_empty(self):
+        assert decode_zone_timer_dump("0" * 128) == {}
+
 
 class TestZoneBitmap:
     def test_no_zones_open(self):

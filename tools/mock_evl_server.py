@@ -83,6 +83,7 @@ class MockEVL:
             self.server_sock.close()
 
     def handle(self, sock):
+        sock.sendall(b"EnvisaLink 4 - mock firmware v01.00\r\n")   # pre-login banner
         sock.sendall(b"Login:\r\n")
         buf = b""
         sock.settimeout(10)

@@ -1,6 +1,6 @@
 # HoneywellEnvisalink
 
-> # 🚧 BETA — v0.3.0-beta — protocol now corrected against real hardware, still wants testers
+> # 🚧 BETA — v0.3.1-beta — protocol corrected against real hardware, plus a data-capture tool for testers
 >
 > The first real-hardware run finally happened (a tester on a Vista 20P with an EVL4), and it turned up a fundamental problem: the first releases were
 > built against the wrong idea of the Honeywell Envisalink wire format, so on a real panel the plugin read the connection but parsed zero frames. That is
@@ -84,8 +84,21 @@ Alarm panels are not lights — getting it wrong has real consequences. The plug
 
 ## Testing & debugging from afar
 
-I (the author) don't have a Honeywell panel to test against, which is why this is a v0.3.0-beta explicitly looking for test pilots. To make remote debugging
+I (the author) don't have a Honeywell panel to test against, which is why this is a v0.3.1-beta explicitly looking for test pilots. To make remote debugging
 tractable, the plugin ships with:
+
+### Capture protocol data for me (the most useful thing you can do)
+`tools/capture_tpi.py` is a small, standalone, **read-only** tool that logs in to your Envisalink, listens to what your panel sends, decodes it, and writes a
+shareable file. It never arms, disarms or bypasses anything — you do any keypad actions yourself and it simply records what the panel reports back. The
+password is entered when prompted (never stored), and the file contains no password. Run it with the guided walk-through and it'll take you through opening a
+zone, arming stay, arming away, entry delay, instant and max, one step at a time:
+
+```bash
+python3 tools/capture_tpi.py --host <your-envisalink-ip> --guided
+```
+
+It writes `honeywell_tpi_capture_<timestamp>.json` and tells you whether it's safe to share. Attach that to a forum reply and I can turn it straight into fixes
+and tests. (Prefer `--guided`; there's also a passive `--duration 180` mode if you'd rather just potter about and label moments yourself.)
 
 ### Built-in diagnostic menu items
 - **Test connection** — connects, logs in, fetches a zone-timer dump, prints full stats to the Indigo log (bytes rx/tx, frame counts, last connect/recv timestamps)
@@ -96,7 +109,8 @@ tractable, the plugin ships with:
 - **Toggle test mode** — flip safety mode without going through the config dialog
 
 ### Pytest suite
-A comprehensive pytest suite covers the protocol parser/encoder, checksum logic, frame parsing, and code-redaction. Run it from the repo root:
+A comprehensive pytest suite covers the protocol parser/encoder, frame parsing, the 16-bit keypad decode, code-redaction and the capture tool — anchored to
+real captured frames. Run it from the repo root:
 
 ```bash
 pip install pytest

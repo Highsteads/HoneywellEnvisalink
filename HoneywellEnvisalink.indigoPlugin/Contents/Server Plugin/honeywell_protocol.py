@@ -5,8 +5,8 @@
 #              No I/O — TCP transport lives in envisalink_client.py.
 #              Pure functions for easy testing with mock data.
 # Author:      Highsteads / CliveS & Claude Opus 4.8
-# Date:        26-06-2026
-# Version:     0.3.0-beta
+# Date:        07-07-2026
+# Version:     0.3.1-beta
 #
 # References used to build this:
 #   - Eyez-On Envisalink TPI specification (Honeywell)
@@ -140,6 +140,41 @@ BEEP_CODES = {
     0: "off", 1: "1 beep", 2: "2 beeps", 3: "3 beeps",
     4: "continuous fast", 5: "continuous slow",
 }
+
+# Ordered (mask, name) for human-readable decoding of the 16-bit keypad field.
+FLAG_NAMES = (
+    (FLAG_READY,           "ready"),
+    (FLAG_ARMED_AWAY,      "armed_away"),
+    (FLAG_ARMED_STAY,      "armed_stay"),
+    (FLAG_ARMED_NO_ENTRY,  "armed_no_entry"),
+    (FLAG_ALARM,           "alarm"),
+    (FLAG_ALARM_IN_MEMORY, "alarm_in_memory"),
+    (FLAG_ALARM_FIRE_ZONE, "alarm_fire_zone"),
+    (FLAG_AC_PRESENT,      "ac_present"),
+    (FLAG_BYPASS,          "bypass"),
+    (FLAG_CHIME,           "chime"),
+    (FLAG_SYSTEM_TROUBLE,  "system_trouble"),
+    (FLAG_FIRE,            "fire"),
+    (FLAG_LOW_BATTERY,     "low_battery"),
+)
+
+_KNOWN_FLAG_MASK = 0
+for _m, _n in FLAG_NAMES:
+    _KNOWN_FLAG_MASK |= _m
+
+
+def flag_names(bitmap: int) -> List[str]:
+    """
+    Human-readable names of the set bits in a 16-bit keypad flag field. Any set
+    bit we don't have a name for is surfaced as unknown(0xNNNN) — that is exactly
+    the kind of thing worth spotting in a real-hardware capture (e.g. the two
+    'not used' bits Honeywell sets in the wild).
+    """
+    names = [name for mask, name in FLAG_NAMES if bitmap & mask]
+    unknown = bitmap & ~_KNOWN_FLAG_MASK & 0xFFFF
+    if unknown:
+        names.append(f"unknown(0x{unknown:04X})")
+    return names
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -320,6 +355,29 @@ def _decode_zone_bitmap(hexdata: str) -> Set[int]:
                 open_zones.add(zone)
             zone += 1
     return open_zones
+
+
+def decode_zone_timer_dump(payload: str) -> dict:
+    """
+    Split a %FF zone-timer-dump payload into per-zone 16-bit values. Each zone is
+    a 4-hex little-endian word; returns {zone_number: raw_value} for non-zero
+    zones only. This preserves the STRUCTURE for analysis — the exact SEMANTICS
+    of the value (seconds since fault / countdown) are not yet verified on
+    hardware, so we don't interpret it here.
+    """
+    timers = {}
+    zone = 1
+    hexdata = payload.strip()
+    for i in range(0, len(hexdata) - (len(hexdata) % 4), 4):
+        chunk = hexdata[i:i + 4]
+        try:
+            value = int(chunk[2:4] + chunk[0:2], 16)   # little-endian word
+        except ValueError:
+            value = 0
+        if value:
+            timers[zone] = value
+        zone += 1
+    return timers
 
 
 def parse_zone_state(frame: RawFrame) -> Optional[ZoneBitmap]:
