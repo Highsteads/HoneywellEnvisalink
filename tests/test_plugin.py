@@ -7,6 +7,7 @@
 # Author:      Highsteads / CliveS & Claude Opus 4.8
 
 import sys
+import time
 import types
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -124,3 +125,45 @@ class TestPartitionEventDedup:
         p._emit_partition_events(1, PartitionState.ARMED_AWAY)
         p._emit_partition_events(2, PartitionState.ARMED_AWAY)
         assert fired == ["armed_away", "armed_away"]
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Menu-driven protocol capture (read-only)
+# ────────────────────────────────────────────────────────────────────────────
+
+class TestMenuCapture:
+    def _plugin(self):
+        p = plugin.Plugin("com.clives.indigoplugin.honeywell-envisalink",
+                          "HoneywellEnvisalink", "0.4.0-beta", {})
+        p.logger = MagicMock()
+        return p
+
+    def test_on_raw_line_noop_when_not_capturing(self):
+        p = self._plugin()
+        assert p._capture is None
+        p._on_raw_line("%00,01,1C08,08,00,Ready$")   # must not raise
+        assert p._capture is None
+
+    def test_on_raw_line_accumulates_when_capturing(self):
+        p = self._plugin()
+        p._capture = {"records": [], "counts": {}, "unparsed": 0, "start": time.time()}
+        p._on_raw_line("%00,01,1C08,08,00,****DISARMED**** Ready$")
+        p._on_raw_line("garbage no dollar")
+        assert len(p._capture["records"]) == 2
+        assert p._capture["unparsed"] == 1
+        assert p._capture["counts"].get("%00") == 1
+
+    def test_menu_capture_guards_when_not_connected(self):
+        p = self._plugin()
+        p.client = None
+        p.menu_capture_data({"duration_min": "3"}, None)
+        assert p._capture is None
+        assert p.logger.error.called
+
+    def test_menu_capture_guards_when_already_running(self):
+        p = self._plugin()
+        p.client = MagicMock()
+        p.client.is_connected.return_value = True
+        p._capture = {"records": [], "counts": {}, "unparsed": 0, "start": time.time()}
+        p.menu_capture_data({"duration_min": "3"}, None)   # should refuse, not start a 2nd
+        assert p.logger.warning.called

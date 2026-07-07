@@ -7,7 +7,7 @@
 #              in both directions (with user codes redacted).
 # Author:      Highsteads / CliveS & Claude Opus 4.8
 # Date:        07-07-2026
-# Version:     0.3.1-beta
+# Version:     0.4.0-beta
 
 import socket
 import threading
@@ -63,6 +63,7 @@ class EnvisalinkClient:
         logger=None,
         port: int = DEFAULT_PORT,
         debug_protocol: bool = False,
+        on_raw_line: Optional[Callable[[str], None]] = None,
     ):
         self.host = host
         self.password = password
@@ -70,6 +71,9 @@ class EnvisalinkClient:
         self.on_frame = on_frame
         self.on_login = on_login or (lambda r: None)
         self.on_disconnect = on_disconnect or (lambda r: None)
+        # Optional tap on EVERY received line (parseable or not) — used by the
+        # plugin's protocol-capture menu so it can record raw/unparsed lines too.
+        self.on_raw_line = on_raw_line or (lambda line: None)
         self.logger = logger
         self.debug_protocol = debug_protocol
 
@@ -323,6 +327,10 @@ class EnvisalinkClient:
                 except Exception:
                     continue
                 self._record_debug("RX", text)
+                try:
+                    self.on_raw_line(text)
+                except Exception as e:
+                    self._log("warning", f"on_raw_line callback raised: {e}")
 
                 if not login_done:
                     if text == "Login:":

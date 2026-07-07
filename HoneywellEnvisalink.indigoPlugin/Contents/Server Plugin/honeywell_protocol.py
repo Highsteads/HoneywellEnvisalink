@@ -6,7 +6,7 @@
 #              Pure functions for easy testing with mock data.
 # Author:      Highsteads / CliveS & Claude Opus 4.8
 # Date:        07-07-2026
-# Version:     0.3.1-beta
+# Version:     0.4.0-beta
 #
 # References used to build this:
 #   - Eyez-On Envisalink TPI specification (Honeywell)

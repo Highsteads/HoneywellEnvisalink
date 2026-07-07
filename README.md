@@ -1,6 +1,6 @@
 # HoneywellEnvisalink
 
-> # 🚧 BETA — v0.3.1-beta — protocol corrected against real hardware, plus a data-capture tool for testers
+> # 🚧 BETA — v0.4.0-beta — protocol corrected against real hardware, with a one-click data-capture built into the plugin
 >
 > The first real-hardware run finally happened (a tester on a Vista 20P with an EVL4), and it turned up a fundamental problem: the first releases were
 > built against the wrong idea of the Honeywell Envisalink wire format, so on a real panel the plugin read the connection but parsed zero frames. That is
@@ -14,6 +14,12 @@
 > If you've got Honeywell hardware and are up for being a beta tester, see [Testing & debugging from afar](#testing--debugging-from-afar) below.
 
 An [Indigo Domotics](https://www.indigodomo.com) plugin that connects **Honeywell Vista alarm panels** to Indigo via an **Envisalink** network module.
+
+## What's new in v0.4.0-beta
+
+Helping with the beta no longer needs the terminal. There's now a **Capture protocol data** item right in the plugin's menu (Plugins → HoneywellEnvisalink → Capture protocol data). Pick how long to run it, and it records what your panel sends while you use your keypad, then writes a shareable file and tells you whether it's safe to post. It only ever listens — it can't arm or disarm anything, and there's no password in the file. That's the easiest way to send me the data I need to finish the zone and arm/disarm decoding.
+
+Under the hood the menu capture and the standalone `tools/capture_tpi.py` now share the same decode-and-redact code, so they can't drift, and the whole capture path was checked over by an adversarial review before it went anywhere near a live panel.
 
 ## What's new in v0.3.0-beta
 
@@ -84,23 +90,24 @@ Alarm panels are not lights — getting it wrong has real consequences. The plug
 
 ## Testing & debugging from afar
 
-I (the author) don't have a Honeywell panel to test against, which is why this is a v0.3.1-beta explicitly looking for test pilots. To make remote debugging
+I (the author) don't have a Honeywell panel to test against, which is why this is a v0.4.0-beta explicitly looking for test pilots. To make remote debugging
 tractable, the plugin ships with:
 
 ### Capture protocol data for me (the most useful thing you can do)
-`tools/capture_tpi.py` is a small, standalone, **read-only** tool that logs in to your Envisalink, listens to what your panel sends, decodes it, and writes a
-shareable file. It never arms, disarms or bypasses anything — you do any keypad actions yourself and it simply records what the panel reports back. The
-password is entered when prompted (never stored), and the file contains no password. Run it with the guided walk-through and it'll take you through opening a
-zone, arming stay, arming away, entry delay, instant and max, one step at a time:
+The easiest way is right in the plugin: **Plugins → HoneywellEnvisalink → Capture protocol data**. Choose how long to run it, then follow the short list of
+keypad actions it shows you (open a zone, arm stay, arm away, let an entry delay run, arm instant, arm max, disarming after each). It records what your panel
+sends the whole time, writes a JSON file to `/tmp`, and logs whether it's safe to share. It never sends an arm/disarm — it only listens — and there's no
+password in the file. Attach that file to a forum reply and I can turn it straight into fixes and tests.
+
+If you'd rather use the terminal, `tools/capture_tpi.py` does the same thing with a step-by-step guided walk-through (it shares the exact same decoding and
+redaction as the menu item):
 
 ```bash
 python3 tools/capture_tpi.py --host <your-envisalink-ip> --guided
 ```
 
-It writes `honeywell_tpi_capture_<timestamp>.json` and tells you whether it's safe to share. Attach that to a forum reply and I can turn it straight into fixes
-and tests. (Prefer `--guided`; there's also a passive `--duration 180` mode if you'd rather just potter about and label moments yourself.)
-
 ### Built-in diagnostic menu items
+- **Capture protocol data** — records what your panel sends for a chosen few minutes while you use your keypad, then writes a shareable JSON file (read-only, no password, codes masked)
 - **Test connection** — connects, logs in, fetches a zone-timer dump, prints full stats to the Indigo log (bytes rx/tx, frame counts, last connect/recv timestamps)
 - **Dump recent protocol traffic to log** — prints the last 500 raw TPI lines (with user codes redacted) so I can see exactly what your panel is sending
 - **Save diagnostic bundle** — writes a complete JSON bundle to `/tmp/honeywell_envisalink_diag_<timestamp>.json` containing stats, recent traffic, plugin

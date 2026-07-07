@@ -16,6 +16,34 @@
         <CallbackMethod>menu_save_diagnostic_bundle</CallbackMethod>
     </MenuItem>
 
+    <MenuItem id="captureData">
+        <Name>Capture protocol data (for the author)...</Name>
+        <CallbackMethod>menu_capture_data</CallbackMethod>
+        <ConfigUI>
+            <Field id="info" type="label">
+                <Label>This records what your panel sends for a few minutes and writes a shareable file (no password, no user codes). It NEVER arms or disarms anything — you do that on your keypad, it only listens.
+
+While it is running, please do these on your keypad (the log shows the states updating as you go):
+   1. Open and close a zone (a door or window)
+   2. Arm STAY, let it arm, then disarm
+   3. Arm AWAY, let the exit delay run right through until armed, then disarm
+   4. Arm AWAY, open your entry door, let the entry countdown run about 10 seconds, then disarm before the siren
+   5. Arm INSTANT (code then 7) and Arm MAX (code then 4), disarming after each
+
+When it finishes it writes a JSON file to /tmp and tells you whether it is safe to share.</Label>
+            </Field>
+            <Field id="duration_min" type="menu" defaultValue="3">
+                <Label>Capture for:</Label>
+                <List>
+                    <Option value="2">2 minutes</Option>
+                    <Option value="3">3 minutes</Option>
+                    <Option value="5">5 minutes</Option>
+                    <Option value="8">8 minutes</Option>
+                </List>
+            </Field>
+        </ConfigUI>
+    </MenuItem>
+
     <MenuItem id="sep0" isSeparator="true"/>
 
     <MenuItem id="toggleDebugProtocol">

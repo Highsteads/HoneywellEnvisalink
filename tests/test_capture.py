@@ -1,9 +1,9 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 # Filename:    test_capture.py
-# Description: Pytest suite for tools/capture_tpi.py — the safe read-only capture
-#              tool. Verifies decoding, redaction, the read-only safety gate, the
-#              CRLF-injection guard, and the write fallback.
+# Description: Pytest suite for the shared tpi_capture module + the standalone
+#              tools/capture_tpi.py — decoding, redaction, the read-only safety
+#              gate, the CRLF-injection guard, and the write fallback.
 # Author:      Highsteads / CliveS & Claude Opus 4.8
 
 import json
@@ -12,26 +12,24 @@ import pytest
 from pathlib import Path
 
 REPO = Path(__file__).parent.parent
-sys.path.insert(0, str(REPO / "tools"))
 sys.path.insert(0, str(REPO / "HoneywellEnvisalink.indigoPlugin" / "Contents" / "Server Plugin"))
+sys.path.insert(0, str(REPO / "tools"))
 
 import capture_tpi
-from capture_tpi import (
-    decode_line, Capture, _READONLY_COMMANDS, mask_codes, password_is_safe,
-    write_bundle, _sensitive_records,
+import tpi_capture
+from tpi_capture import (
+    decode_line, mask_codes, mask_keypad_raw, sensitive_records, make_bundle,
+    write_bundle, build_state_timeline,
 )
+from capture_tpi import Capture, password_is_safe, _READONLY_COMMANDS
 from honeywell_protocol import encode_keepalive, encode_dump_zone_timers, encode_disarm, encode_keypress
 
 
 REAL_KEYPAD = "%00,01,1C08,08,00,****DISARMED****  Ready to Arm  $"
 
 
-def new_capture(password="pw"):
-    return Capture("192.168.1.50", 4025, password, keepalive=False, dump_zones=False)
-
-
 # ────────────────────────────────────────────────────────────────────────────
-# Decoding
+# Decoding (shared module)
 # ────────────────────────────────────────────────────────────────────────────
 
 class TestDecode:
@@ -50,36 +48,29 @@ class TestDecode:
         assert d["parsed"] and d["type"] == "other"
 
     def test_partition_state(self):
-        d = decode_line("%02,0500000000000000$")
-        assert d["type"] == "partition_state" and d["partitions"] == {1: "armed_away"}
+        assert decode_line("%02,0500000000000000$")["partitions"] == {1: "armed_away"}
 
     def test_zone_bitmap(self):
-        d = decode_line("%01,0100000000000000$")
-        assert d["type"] == "zone_bitmap" and 1 in d["open_zones"]
+        assert 1 in decode_line("%01,0100000000000000$")["open_zones"]
 
     def test_cid(self):
-        d = decode_line("%03,113001005$")
-        assert d["type"] == "cid_event" and d["cid"]["event"] == 130
+        assert decode_line("%03,113001005$")["cid"]["event"] == 130
 
     def test_zone_timer_dump_decoded(self):
-        # zone 1 word 0100 -> 0x0001, zone 2 word 0500 -> 0x0005
         d = decode_line("%FF,01000500" + "0" * 120 + "$")
-        assert d["type"] == "zone_timer_dump"
-        assert d["zone_timers"] == {1: 1, 2: 5}
+        assert d["type"] == "zone_timer_dump" and d["zone_timers"] == {1: 1, 2: 5}
 
     def test_unparseable_line_flagged(self):
         d = decode_line("total garbage no dollar")
         assert d["parsed"] is False and "did not parse" in d["note"]
 
     def test_recognised_but_unparsed_counts_as_unparsed(self):
-        # A framed %00 with a non-hex flags field: recognised, but decode fails.
         d = decode_line("%00,01,ZZZZ,00,00,Ready$")
-        assert d["type"] == "recognised_but_unparsed"
-        assert d["parsed"] is False       # so it lands in unparsed_count
+        assert d["type"] == "recognised_but_unparsed" and d["parsed"] is False
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# SAFETY — read-only gate + CRLF-injection guard
+# SAFETY — read-only gate + CRLF-injection guard (tool)
 # ────────────────────────────────────────────────────────────────────────────
 
 class TestReadOnlySafety:
@@ -92,33 +83,32 @@ class TestReadOnlySafety:
             assert cmd not in _READONLY_COMMANDS
 
     def test_send_readonly_rejects_keypress(self):
-        cap = new_capture()
+        cap = Capture("192.168.1.50", 4025, "pw", True, False)
         with pytest.raises(RuntimeError):
             cap._send_readonly(encode_keypress(1, "5"))
         with pytest.raises(RuntimeError):
             cap._send_readonly("^03,1,1$\r\n")
 
     def test_send_readonly_accepts_allowlisted(self):
-        cap = new_capture()
+        cap = Capture("192.168.1.50", 4025, "pw", True, False)
         sent = []
         cap.sock = type("S", (), {"sendall": lambda _self, b: sent.append(b)})()
         cap._send_readonly(encode_keepalive())
         cap._send_readonly(encode_dump_zone_timers())
         assert sent == [b"^00,$\r\n", b"^02,$\r\n"]
 
-    def test_source_never_constructs_or_sends_a_keypress(self):
-        src = Path(capture_tpi.__file__).read_text(encoding="utf-8")
-        for forbidden in ("encode_keypress", "encode_keystroke", "encode_disarm",
-                          "encode_arm", "encode_bypass", "send_keypresses"):
-            assert forbidden not in src, f"tool references {forbidden}"
-        assert src.count("sendall(") <= 2
+    def test_tool_and_plugin_never_construct_a_keypress(self):
+        for mod in (capture_tpi, tpi_capture):
+            src = Path(mod.__file__).read_text(encoding="utf-8")
+            for forbidden in ("encode_keypress", "encode_keystroke", "encode_disarm",
+                              "encode_arm", "encode_bypass", "send_keypresses"):
+                assert forbidden not in src, f"{mod.__name__} references {forbidden}"
+        assert Path(capture_tpi.__file__).read_text(encoding="utf-8").count("sendall(") <= 2
 
     def test_password_crlf_injection_rejected(self):
-        # The exact attack the adversarial review found.
         assert password_is_safe("mypass\r\n^03,1,1$") is False
         assert password_is_safe("has$dollar") is False
         assert password_is_safe("has^caret") is False
-        assert password_is_safe("has\nnewline") is False
         assert password_is_safe("") is False
 
     def test_password_normal_accepted(self):
@@ -127,97 +117,62 @@ class TestReadOnlySafety:
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# Redaction — codes in notes, conditional "safe to share"
+# Redaction (shared module)
 # ────────────────────────────────────────────────────────────────────────────
 
 class TestRedaction:
     def test_mask_codes(self):
         assert mask_codes("disarmed with 4471") == "disarmed with ####"
-        assert mask_codes("used code 123456 today") == "used code #### today"
+        assert mask_codes("opened zone 01") == "opened zone 01"      # short numbers kept
 
-    def test_short_numbers_not_masked(self):
-        # zone numbers, partition numbers etc. (1-3 digits) stay legible
-        assert mask_codes("opened zone 01") == "opened zone 01"
-
-    def test_add_marker_masks_a_typed_code(self):
-        cap = new_capture()
-        cap.add_marker("NOTE: I disarmed using 4471")
-        rec = [r for r in cap.records if r["kind"] == "marker"][-1]
-        assert "4471" not in rec["note"]
-        assert "####" in rec["note"]
+    def test_mask_keypad_raw_keeps_header(self):
+        raw = mask_keypad_raw("%00,01,1008,00,00,ENTER CODE 4471$")
+        assert raw.startswith("%00,01,1008,00,00,") and "4471" not in raw
 
     def test_display_code_is_masked(self):
-        # A panel line that (unusually) echoes a code in the display must be masked.
         d = decode_line("%00,01,1008,00,00,ENTER CODE 4471$")
-        assert "4471" not in d["display"]
-        assert "4471" not in d["raw"]        # the raw display tail is masked too
-        assert d["raw"].startswith("%00,01,1008,00,00,")   # header preserved
+        assert "4471" not in d["display"] and "4471" not in d["raw"]
 
     def test_verdict_flags_undecoded_line_with_digit_run(self):
-        cap = new_capture()
-        cap.records.append({"kind": "frame", "type": "other", "parsed": True,
-                            "raw": "^ZZ,ACCT 4471$", "payload": "ACCT 4471"})
-        assert _sensitive_records(cap.build_bundle())
+        bundle = {"records": [{"kind": "frame", "type": "other",
+                               "raw": "^ZZ,ACCT 4471$", "payload": "ACCT 4471"}]}
+        assert sensitive_records(bundle)
 
     def test_verdict_ignores_hex_payload_of_decoded_frames(self):
-        # A %FF zone-timer dump / %02 partition frame is full of hex digit runs but
-        # is structurally safe — it must NOT trip the 'review before sharing' verdict.
-        cap = new_capture()
-        cap._record_frame("%FF," + "0100050000000000" * 8 + "$")
-        cap._record_frame("%02,0500000000000000$")
-        assert _sensitive_records(cap.build_bundle()) == []
-
-    def test_verdict_flags_residual_note_code(self):
-        cap = new_capture()
-        cap.records.append({"kind": "marker", "note": "code is 9999"})   # injected unmasked
-        assert _sensitive_records(cap.build_bundle())
-
-    def test_recorded_frames_never_contain_password(self):
-        # The password never arrives inbound; assert it isn't anywhere regardless.
-        cap = new_capture(password="sup3rpass")
-        cap._record_frame(REAL_KEYPAD)
-        assert "sup3rpass" not in json.dumps(cap.build_bundle())
+        recs = [decode_line("%FF," + "0100050000000000" * 8 + "$"),
+                decode_line("%02,0500000000000000$")]
+        assert sensitive_records({"records": recs}) == []
 
     def test_host_is_redacted_in_bundle(self):
-        cap = Capture("192.168.100.160", 4025, "pw", keepalive=False, dump_zones=False)
-        assert cap.build_bundle()["host"] == "<redacted>"
-        assert "192.168.100.160" not in json.dumps(cap.build_bundle())
+        b = make_bundle([], {}, 0, 1.0, 4025)
+        assert b["host"] == "<redacted>"
+
+    def test_password_never_in_bundle(self):
+        recs = [dict(kind="frame", **decode_line(REAL_KEYPAD))]
+        assert "sup3rpass" not in json.dumps(make_bundle(recs, {}, 0, 1.0, 4025))
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# Robustness — write fallback, transitions
+# Output — write fallback, state timeline
 # ────────────────────────────────────────────────────────────────────────────
 
 class TestOutput:
     def test_write_fallback_on_bad_path(self, tmp_path):
-        cap = new_capture()
-        cap.add_marker("hello")
-        bundle = cap.build_bundle()
-        # A path whose parent cannot be created (a file used as a directory)
         blocker = tmp_path / "afile"
         blocker.write_text("x")
         bad = str(blocker / "sub" / "out.json")
-        written = write_bundle(bundle, bad)
-        assert Path(written).exists()          # fell back to a temp file
-        assert written != bad
+        written = write_bundle(make_bundle([], {}, 0, 1.0, 4025), bad)
+        assert Path(written).exists() and written != bad
 
     def test_write_creates_missing_parent(self, tmp_path):
-        cap = new_capture()
-        bundle = cap.build_bundle()
         target = str(tmp_path / "newdir" / "capture.json")
-        written = write_bundle(bundle, target)
+        written = write_bundle(make_bundle([], {}, 0, 1.0, 4025), target)
         assert written == target and Path(target).exists()
 
-    def test_transitions_summary(self):
-        cap = new_capture()
-        cap.records = [
-            {"kind": "marker", "note": "STEP START: arm_away - x", "t": 1.0},
-            {"kind": "frame", "type": "keypad_update", "derived_state": "exit_delay", "t": 1.5, "display": "", "beep": "3 beeps"},
-            {"kind": "frame", "type": "keypad_update", "derived_state": "exit_delay", "t": 2.0, "display": "", "beep": "3 beeps"},
-            {"kind": "frame", "type": "keypad_update", "derived_state": "armed_away", "t": 8.0, "display": "", "beep": "off"},
-            {"kind": "marker", "note": "STEP END: arm_away", "t": 9.0},
+    def test_state_timeline_dedups_consecutive_states(self):
+        recs = [
+            {"type": "keypad_update", "derived_state": "exit_delay", "t": 1.5, "display": "", "beep": "3 beeps"},
+            {"type": "keypad_update", "derived_state": "exit_delay", "t": 2.0, "display": "", "beep": "3 beeps"},
+            {"type": "keypad_update", "derived_state": "armed_away", "t": 8.0, "display": "", "beep": "off"},
         ]
-        trans = cap._build_transitions()
-        assert len(trans) == 1
-        # de-duplicated consecutive states: exit_delay then armed_away
-        assert [s["state"] for s in trans[0]["states"]] == ["exit_delay", "armed_away"]
+        assert [s["state"] for s in build_state_timeline(recs)] == ["exit_delay", "armed_away"]

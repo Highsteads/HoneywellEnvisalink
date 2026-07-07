@@ -5,7 +5,7 @@
 #              alarm panels to Indigo via Envisalink network modules (EVL3/EVL4).
 # Author:      Highsteads / CliveS & Claude Opus 4.8
 # Date:        07-07-2026
-# Version:     0.3.1-beta
+# Version:     0.4.0-beta
 # Plugin ID:   com.clives.indigoplugin.honeywell-envisalink
 
 import os as _os
@@ -15,7 +15,11 @@ _sys.path.insert(0, _os.getcwd())
 import indigo
 import json
 import logging
+import threading
 import time
+from datetime import datetime
+
+import tpi_capture
 
 from honeywell_protocol import (
     KeypadUpdate, ZoneBitmap, RealtimeCIDEvent,
@@ -40,7 +44,7 @@ try:
 except ImportError:
     ENVISALINK_PASSWORD = ""
 
-PLUGIN_VERSION = "0.3.1-beta"
+PLUGIN_VERSION = "0.4.0-beta"
 PLUGIN_ID = "com.clives.indigoplugin.honeywell-envisalink"
 
 DEFAULT_PORT = 4025
@@ -107,6 +111,10 @@ class Plugin(indigo.PluginBase):
         # EVL client (created on startup)
         self.client = None
 
+        # Protocol capture (menu-driven, read-only) — None unless a capture is running
+        self._capture = None
+        self._capture_timer = None
+
         # Startup banner moved to showPluginInfo on demand (revised 25-May-2026 per Jay).
 
     # ── Lifecycle ──────────────────────────────────────────────────────────
@@ -131,6 +139,10 @@ class Plugin(indigo.PluginBase):
 
     def shutdown(self):
         self.logger.info("shutdown")
+        if self._capture_timer:
+            self._capture_timer.cancel()
+            self._capture_timer = None
+        self._capture = None
         if self.client:
             self.client.stop()
             self.client = None
@@ -170,6 +182,7 @@ class Plugin(indigo.PluginBase):
             logger=self.logger,
             port=self.port,
             debug_protocol=self.debug_protocol,
+            on_raw_line=self._on_raw_line,
         )
         self.client.start()
         self.logger.info(f"started EVL client → {self.host}:{self.port}")
@@ -407,6 +420,78 @@ class Plugin(indigo.PluginBase):
                 "lastCid",
                 value=f"{cid.qualifier}{cid.event_code:03d}/P{cid.partition}/{cid.zone_or_user}"
             )
+
+    # ── Protocol capture (read-only, menu-driven) ─────────────────────────
+
+    def _on_raw_line(self, text):
+        """Called by the client for EVERY received line (parseable or not) — records
+        it while a capture is running. Read-only: this only observes inbound data."""
+        cap = self._capture
+        if cap is None:
+            return
+        try:
+            dec = tpi_capture.decode_line(text)
+        except Exception:
+            return
+        rec = {"t": round(time.time() - cap["start"], 3),
+               "ts": datetime.now().isoformat(timespec="milliseconds"),
+               "kind": "frame", **dec}
+        cap["records"].append(rec)
+        code = dec.get("code", "unparsed")
+        cap["counts"][code] = cap["counts"].get(code, 0) + 1
+        if not dec.get("parsed", False):
+            cap["unparsed"] += 1
+
+    def menu_capture_data(self, valuesDict=None, typeId=None):
+        """Start a timed, read-only protocol capture and write a shareable file."""
+        if not (self.client and self.client.is_connected()):
+            self.logger.error("Capture: not connected to the Envisalink — configure and connect first.")
+            return
+        if self._capture is not None:
+            self.logger.warning("A protocol capture is already running — please wait for it to finish.")
+            return
+        try:
+            minutes = int((valuesDict or {}).get("duration_min", "3"))
+        except (ValueError, TypeError):
+            minutes = 3
+        minutes = max(1, min(minutes, 10))
+        self._capture = {"records": [], "counts": {}, "unparsed": 0, "start": time.time()}
+        # Read-only nudge for a zone-timer dump so we get some zone data too.
+        try:
+            self.client.send_raw(encode_dump_zone_timers())
+        except Exception:
+            pass
+        self.logger.info(f"── Protocol capture STARTED for {minutes} minute(s). On your keypad, please:")
+        for i, step in enumerate(tpi_capture.CAPTURE_STEPS, 1):
+            self.logger.info(f"     {i}. {step}")
+        self.logger.info("   Recording now — you'll see the panel states update in the log as you go.")
+        self._capture_timer = threading.Timer(minutes * 60, self._finish_capture)
+        self._capture_timer.daemon = True
+        self._capture_timer.start()
+
+    def _finish_capture(self):
+        cap = self._capture
+        self._capture = None
+        self._capture_timer = None
+        if cap is None:
+            return
+        duration_s = round(time.time() - cap["start"], 3)
+        bundle = tpi_capture.make_bundle(cap["records"], cap["counts"], cap["unparsed"],
+                                         duration_s, self.port, source="menu")
+        path = f"/tmp/honeywell_tpi_capture_{int(time.time())}.json"
+        written = tpi_capture.write_bundle(bundle, path)
+        sensitive = tpi_capture.sensitive_records(bundle)
+        indigo.server.log("─" * 60)
+        indigo.server.log(f"Protocol capture COMPLETE — {bundle['record_count']} records over {duration_s:.0f}s")
+        indigo.server.log(f"  Written to: {written}")
+        indigo.server.log(f"  Message types seen: {bundle['message_code_counts']}")
+        if sensitive:
+            indigo.server.log(
+                f"  REVIEW BEFORE SHARING — {len(sensitive)} record(s) contain 4-8 digit runs; "
+                "open the file and check them before posting.", level=logging.WARNING)
+        else:
+            indigo.server.log("  Safe to share — no password and no code-like digits. Attach this JSON to a forum reply.")
+        indigo.server.log("─" * 60)
 
     # ── Actions (Actions.xml callbacks) ───────────────────────────────────
 
