@@ -7,7 +7,7 @@
 #              tools/capture_tpi.py, so the two can never drift.
 # Author:      Highsteads / CliveS & Claude Opus 4.8
 # Date:        07-07-2026
-# Version:     0.5.0-beta
+# Version:     0.5.1-beta
 
 import json
 import os
@@ -19,10 +19,10 @@ from pathlib import Path
 from honeywell_protocol import (
     parse_frame, parse_keypad_update, parse_zone_state, parse_partition_state,
     parse_realtime_cid, derive_partition_state, flag_names, decode_zone_timer_dump,
-    BEEP_CODES, TPI_ZONE_TIMER_DUMP, ProtocolError,
+    BEEP_CODES, TPI_ZONE_TIMER_DUMP, TPI_RESPONSE_CODES, TPI_STRAIN_CODES, ProtocolError,
 )
 
-CAPTURE_VERSION = "1.2"
+CAPTURE_VERSION = "1.3"
 
 # Mask runs of 4-8 digits (a plausible code / account / phone number) in free text.
 _CODE_RUN = re.compile(r"\d{4,8}")
@@ -30,7 +30,7 @@ _CODE_RUN = re.compile(r"\d{4,8}")
 # Frame types whose fields are fully structural (state / hex) and therefore safe —
 # their long hex payloads must NOT trip the digit-run 'review before sharing' scan.
 _DECODED_SAFE_TYPES = {"keypad_update", "zone_bitmap", "partition_state",
-                       "cid_event", "zone_timer_dump"}
+                       "cid_event", "zone_timer_dump", "command_response"}
 
 # Step instructions shown to the tester (dialog label in the plugin, guided prompts
 # in the CLI tool). Doing all of these once gives a real sample of every state.
@@ -101,6 +101,13 @@ def decode_line(text):
         if frame.code == TPI_ZONE_TIMER_DUMP:
             out.update({"type": "zone_timer_dump", "payload": frame.payload,
                         "zone_timers": decode_zone_timer_dump(frame.payload)})
+            return out
+        if frame.code.startswith("^"):
+            # A ^CC,RR command/keepalive response — decode RR so strain shows up.
+            rr = frame.payload.strip()[:2]
+            out.update({"type": "command_response", "response_code": rr,
+                        "response": TPI_RESPONSE_CODES.get(rr, "unknown"),
+                        "strain": rr in TPI_STRAIN_CODES})
             return out
         out.update({"type": "other", "payload": frame.payload})
     except ProtocolError as e:

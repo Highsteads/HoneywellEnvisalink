@@ -43,9 +43,14 @@ class TestDecode:
     def test_unknown_flag_bits_surface(self):
         assert any(f.startswith("unknown(") for f in decode_line(REAL_KEYPAD)["flags"])
 
-    def test_command_response_is_other(self):
-        d = decode_line("^FF,05$")
-        assert d["parsed"] and d["type"] == "other"
+    def test_command_response_strain_decoded(self):
+        d = decode_line("^02,05$")   # zone-dump command timed out -> EVL strain
+        assert d["type"] == "command_response" and d["strain"] is True
+        assert d["response"] == "receive state machine timeout"
+
+    def test_command_response_clean(self):
+        d = decode_line("^00,00$")   # keepalive accepted
+        assert d["type"] == "command_response" and d["strain"] is False
 
     def test_partition_state(self):
         assert decode_line("%02,0500000000000000$")["partitions"] == {1: "armed_away"}

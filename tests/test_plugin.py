@@ -195,3 +195,30 @@ class TestZonePoll:
         p._handle_zone_timer_dump(frame)
         d8.updateStatesOnServer.assert_called()        # stale zone refreshed from the dump
         d4.updateStatesOnServer.assert_not_called()    # fresh zone left to the %01 stream
+
+
+class TestStrainWarning:
+    def _p(self):
+        p = plugin.Plugin("com.clives.indigoplugin.honeywell-envisalink",
+                          "HoneywellEnvisalink", "0.5.1-beta", {})
+        p.logger = MagicMock()
+        p.zone_poll_seconds = 5
+        p._last_strain_warn = 0.0
+        return p
+
+    def test_strain_response_warns(self):
+        p = self._p()
+        p._handle_command_response(types.SimpleNamespace(code="^02", payload="05"))  # timeout
+        assert p.logger.warning.called
+
+    def test_strain_warning_is_rate_limited(self):
+        p = self._p()
+        p._handle_command_response(types.SimpleNamespace(code="^02", payload="05"))
+        p.logger.warning.reset_mock()
+        p._handle_command_response(types.SimpleNamespace(code="^02", payload="04"))  # again, immediately
+        assert not p.logger.warning.called                                          # rate-limited
+
+    def test_clean_response_does_not_warn(self):
+        p = self._p()
+        p._handle_command_response(types.SimpleNamespace(code="^00", payload="00"))  # accepted
+        assert not p.logger.warning.called

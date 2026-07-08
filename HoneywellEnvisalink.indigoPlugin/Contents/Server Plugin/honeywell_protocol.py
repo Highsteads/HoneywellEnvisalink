@@ -6,7 +6,7 @@
 #              Pure functions for easy testing with mock data.
 # Author:      Highsteads / CliveS & Claude Opus 4.8
 # Date:        07-07-2026
-# Version:     0.5.0-beta
+# Version:     0.5.1-beta
 #
 # References used to build this:
 #   - Eyez-On Envisalink TPI specification (Honeywell)
@@ -140,6 +140,20 @@ BEEP_CODES = {
     0: "off", 1: "1 beep", 2: "2 beeps", 3: "3 beeps",
     4: "continuous fast", 5: "continuous slow",
 }
+
+# The RR code in a ^CC,RR command/keepalive response. 00 = accepted; the rest
+# mean the Envisalink didn't process the command cleanly.
+TPI_RESPONSE_CODES = {
+    "00": "command accepted",
+    "01": "receive buffer overrun",
+    "02": "unknown command",
+    "03": "syntax error",
+    "04": "receive buffer overflow",
+    "05": "receive state machine timeout",
+}
+# Codes that mean the Envisalink is struggling to keep up with our traffic —
+# a cue to poll it less often (or the tester's dreaded keypad-lockout territory).
+TPI_STRAIN_CODES = frozenset({"01", "04", "05"})
 
 # Ordered (mask, name) for human-readable decoding of the 16-bit keypad field.
 FLAG_NAMES = (

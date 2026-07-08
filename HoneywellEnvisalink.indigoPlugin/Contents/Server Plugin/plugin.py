@@ -5,7 +5,7 @@
 #              alarm panels to Indigo via Envisalink network modules (EVL3/EVL4).
 # Author:      Highsteads / CliveS & Claude Opus 4.8
 # Date:        07-07-2026
-# Version:     0.5.0-beta
+# Version:     0.5.1-beta
 # Plugin ID:   com.clives.indigoplugin.honeywell-envisalink
 
 import os as _os
@@ -24,6 +24,7 @@ import tpi_capture
 from honeywell_protocol import (
     KeypadUpdate, ZoneBitmap, RealtimeCIDEvent,
     PartitionState, LoginResult, TPI_ZONE_TIMER_DUMP,
+    TPI_RESPONSE_CODES, TPI_STRAIN_CODES,
     parse_keypad_update, parse_zone_state, parse_partition_state, parse_realtime_cid,
     derive_partition_state, open_zones_from_timer_dump,
     encode_disarm, encode_arm_away, encode_arm_stay, encode_arm_instant,
@@ -44,7 +45,7 @@ try:
 except ImportError:
     ENVISALINK_PASSWORD = ""
 
-PLUGIN_VERSION = "0.5.0-beta"
+PLUGIN_VERSION = "0.5.1-beta"
 PLUGIN_ID = "com.clives.indigoplugin.honeywell-envisalink"
 
 DEFAULT_PORT = 4025
@@ -81,6 +82,7 @@ def _as_port(value, default=DEFAULT_PORT):
 
 DEFAULT_ZONE_POLL_S = 30
 MIN_ZONE_POLL_S = 5
+STRAIN_WARN_INTERVAL_S = 120   # rate-limit the "Envisalink is struggling" warning
 
 
 def _as_zone_poll(value, default=DEFAULT_ZONE_POLL_S):
@@ -122,6 +124,7 @@ class Plugin(indigo.PluginBase):
         self.zone_devs = {}        # zone_number → indigo.device
         self.partition_last_event = {}   # partition → last fired event id (de-spam)
         self.zone_last_change = {}       # zone → time of last %01 real-time update
+        self._last_strain_warn = 0.0     # rate-limit the EVL-overload warning
 
         # Triggers registered by users for our custom events
         self.event_triggers = {}
@@ -389,6 +392,9 @@ class Plugin(indigo.PluginBase):
             if frame.code == TPI_ZONE_TIMER_DUMP:
                 self._handle_zone_timer_dump(frame)
                 return
+            if frame.code.startswith("^"):
+                self._handle_command_response(frame)
+                return
         except Exception as e:
             self.logger.warning(f"frame handler error: {e}  frame={frame.raw!r}")
 
@@ -442,6 +448,27 @@ class Plugin(indigo.PluginBase):
             if now - self.zone_last_change.get(znum, 0) < window:
                 continue
             self._set_zone(dev, znum in open_zones)
+
+    def _handle_command_response(self, frame):
+        """Watch our own command responses (^CC,RR). If the Envisalink reports it is
+        struggling with our traffic (buffer overrun/overflow/timeout), warn the user
+        in the log with an actionable hint — self-monitoring so a too-aggressive zone
+        poll can't quietly stress the module (the tester's keypad-lockout concern)."""
+        rr = frame.payload.strip()[:2]
+        if rr in TPI_STRAIN_CODES:
+            now = time.time()
+            if now - self._last_strain_warn < STRAIN_WARN_INTERVAL_S:
+                return
+            self._last_strain_warn = now
+            meaning = TPI_RESPONSE_CODES.get(rr, f"code {rr}")
+            self.logger.warning(
+                f"Envisalink reported '{meaning}' ({frame.code},{rr}) — it may be under too "
+                f"much traffic. If this keeps happening, increase 'Zone status refresh "
+                f"(seconds)' (now {self.zone_poll_seconds}s) in the plugin config, or set it "
+                f"to 0 to disable polling.")
+        elif rr not in ("00", "") and self.debug:
+            self.logger.debug(f"command response {frame.code},{rr} "
+                              f"({TPI_RESPONSE_CODES.get(rr, 'unknown')})")
 
     def _handle_partition_state(self, changes):
         # A %02 message carries the status of every partition at once.

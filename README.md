@@ -13,6 +13,10 @@
 
 An [Indigo Domotics](https://www.indigodomo.com) plugin that connects **Honeywell Vista alarm panels** to Indigo via an **Envisalink** network module.
 
+## What's new in v0.5.1-beta
+
+Self-monitoring for the zone polling. If you turn the zone-status refresh right down for snappier door updates, the plugin now watches the Envisalink's own responses and, the moment the module reports it is struggling to keep up (a buffer overrun, overflow or timeout), it logs a plain-English warning suggesting you ease the interval back off. So you get instant feedback in the Indigo log if you've asked too much of the Envisalink, rather than finding out the hard way — "delay is better than lockout", surfaced automatically.
+
 ## What's new in v0.5.0-beta
 
 Faster, more reliable door and window status. A tester noticed that motion sensors updated in Indigo almost instantly, but a door closing could take a couple of minutes to show as shut. That's because Honeywell panels push some zone changes in real time but leave others to be worked out from the panel's zone timers — which is exactly what the Envisalink's own app polls for. The plugin now does the same: it gently polls the zone-timer dump on a set interval and refreshes any zone the real-time stream hasn't just changed, so a door closing shows up within seconds rather than minutes.
@@ -98,7 +102,7 @@ Alarm panels are not lights — getting it wrong has real consequences. The plug
 
 ## Testing & debugging from afar
 
-I (the author) don't have a Honeywell panel to test against, which is why this is a v0.5.0-beta explicitly looking for test pilots. To make remote debugging
+I (the author) don't have a Honeywell panel to test against, which is why this is a v0.5.1-beta explicitly looking for test pilots. To make remote debugging
 tractable, the plugin ships with:
 
 ### Capture protocol data for me (the most useful thing you can do)

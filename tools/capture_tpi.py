@@ -134,6 +134,9 @@ class Capture:
             print(f"    [{dec['code']}] zones open: {dec['open_zones']}")
         elif t == "partition_state":
             print(f"    [{dec['code']}] partitions: {dec['partitions']}")
+        elif t == "command_response":
+            flag = "   <-- EVL STRAIN" if dec.get("strain") else ""
+            print(f"    [{dec['code']}] response: {dec.get('response','')}{flag}")
         elif t == "cid_event":
             print(f"    [{dec['code']}] CID {dec['cid']}")
         elif t == "zone_timer_dump":
