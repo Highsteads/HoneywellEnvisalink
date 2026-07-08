@@ -5,7 +5,7 @@
 #              alarm panels to Indigo via Envisalink network modules (EVL3/EVL4).
 # Author:      Highsteads / CliveS & Claude Opus 4.8
 # Date:        07-07-2026
-# Version:     0.4.1-beta
+# Version:     0.5.0-beta
 # Plugin ID:   com.clives.indigoplugin.honeywell-envisalink
 
 import os as _os
@@ -23,9 +23,9 @@ import tpi_capture
 
 from honeywell_protocol import (
     KeypadUpdate, ZoneBitmap, RealtimeCIDEvent,
-    PartitionState, LoginResult,
+    PartitionState, LoginResult, TPI_ZONE_TIMER_DUMP,
     parse_keypad_update, parse_zone_state, parse_partition_state, parse_realtime_cid,
-    derive_partition_state,
+    derive_partition_state, open_zones_from_timer_dump,
     encode_disarm, encode_arm_away, encode_arm_stay, encode_arm_instant,
     encode_arm_max, encode_bypass_zone, encode_dump_zone_timers,
 )
@@ -44,7 +44,7 @@ try:
 except ImportError:
     ENVISALINK_PASSWORD = ""
 
-PLUGIN_VERSION = "0.4.1-beta"
+PLUGIN_VERSION = "0.5.0-beta"
 PLUGIN_ID = "com.clives.indigoplugin.honeywell-envisalink"
 
 DEFAULT_PORT = 4025
@@ -79,6 +79,22 @@ def _as_port(value, default=DEFAULT_PORT):
     return port if 1 <= port <= 65535 else default
 
 
+DEFAULT_ZONE_POLL_S = 30
+MIN_ZONE_POLL_S = 5
+
+
+def _as_zone_poll(value, default=DEFAULT_ZONE_POLL_S):
+    """Coerce the zone-poll-interval pref. 0 disables; otherwise clamp to a gentle
+    minimum so a mistyped tiny value can never hammer the EVL."""
+    try:
+        n = int(str(value).strip())
+    except (ValueError, TypeError, AttributeError):
+        return default
+    if n <= 0:
+        return 0
+    return max(MIN_ZONE_POLL_S, n)
+
+
 class Plugin(indigo.PluginBase):
 
     def __init__(self, pluginId, pluginDisplayName, pluginVersion, pluginPrefs):
@@ -96,6 +112,7 @@ class Plugin(indigo.PluginBase):
         self.test_mode = _as_bool(pluginPrefs.get("test_mode", True), default=True)
         self.debug_protocol = _as_bool(pluginPrefs.get("debug_protocol", False))
         self.debug_logging = _as_bool(pluginPrefs.get("debug_logging", False))
+        self.zone_poll_seconds = _as_zone_poll(pluginPrefs.get("zone_poll_seconds", DEFAULT_ZONE_POLL_S))
 
         self.debug = self.debug_logging   # Indigo's base class uses self.debug
 
@@ -104,6 +121,7 @@ class Plugin(indigo.PluginBase):
         self.partition_devs = {}   # partition_number → indigo.device
         self.zone_devs = {}        # zone_number → indigo.device
         self.partition_last_event = {}   # partition → last fired event id (de-spam)
+        self.zone_last_change = {}       # zone → time of last %01 real-time update
 
         # Triggers registered by users for our custom events
         self.event_triggers = {}
@@ -183,6 +201,7 @@ class Plugin(indigo.PluginBase):
             port=self.port,
             debug_protocol=self.debug_protocol,
             on_raw_line=self._on_raw_line,
+            zone_poll_interval_s=self.zone_poll_seconds,
         )
         self.client.start()
         self.logger.info(f"started EVL client → {self.host}:{self.port}")
@@ -211,6 +230,7 @@ class Plugin(indigo.PluginBase):
         self.test_mode = _as_bool(valuesDict.get("test_mode", True), default=True)
         self.debug_protocol = _as_bool(valuesDict.get("debug_protocol", False))
         self.debug_logging = _as_bool(valuesDict.get("debug_logging", False))
+        self.zone_poll_seconds = _as_zone_poll(valuesDict.get("zone_poll_seconds", DEFAULT_ZONE_POLL_S))
         self.debug = self.debug_logging
 
         # Guard: same checks as startup() — don't kick off a connection loop
@@ -366,6 +386,9 @@ class Plugin(indigo.PluginBase):
             if cid:
                 self._handle_cid_event(cid)
                 return
+            if frame.code == TPI_ZONE_TIMER_DUMP:
+                self._handle_zone_timer_dump(frame)
+                return
         except Exception as e:
             self.logger.warning(f"frame handler error: {e}  frame={frame.raw!r}")
 
@@ -391,15 +414,34 @@ class Plugin(indigo.PluginBase):
         ])
         self._emit_partition_events(ku.partition, derived)
 
+    def _set_zone(self, dev, is_open):
+        dev.updateStatesOnServer([
+            {"key": "onOffState", "value": is_open},
+            {"key": "zoneState", "value": "open" if is_open else "closed"},
+        ])
+
     def _handle_zone_bitmap(self, zb: ZoneBitmap):
-        # A %01 message is a bitmap of ALL open zones — update every tracked zone
-        # (a zone not in the set is closed).
+        # A %01 message is a real-time bitmap of ALL open zones — authoritative.
+        # Record the update time so the periodic %FF poll won't override a zone
+        # that has just changed.
+        now = time.time()
         for znum, dev in self.zone_devs.items():
-            is_open = znum in zb.open_zones
-            dev.updateStatesOnServer([
-                {"key": "onOffState", "value": is_open},
-                {"key": "zoneState", "value": "open" if is_open else "closed"},
-            ])
+            self._set_zone(dev, znum in zb.open_zones)
+            self.zone_last_change[znum] = now
+
+    def _handle_zone_timer_dump(self, frame):
+        # Periodic %FF poll: refresh zone open/closed for zones the real-time %01
+        # stream hasn't touched recently. This is what catches a door that quietly
+        # closed without a push. %01 always wins for a just-changed zone (the dump
+        # can be up to one poll-interval stale), so we skip any zone updated within
+        # the poll window.
+        open_zones = open_zones_from_timer_dump(frame.payload)
+        now = time.time()
+        window = max(self.zone_poll_seconds, MIN_ZONE_POLL_S)
+        for znum, dev in self.zone_devs.items():
+            if now - self.zone_last_change.get(znum, 0) < window:
+                continue
+            self._set_zone(dev, znum in open_zones)
 
     def _handle_partition_state(self, changes):
         # A %02 message carries the status of every partition at once.

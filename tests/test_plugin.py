@@ -167,3 +167,31 @@ class TestMenuCapture:
         p._capture = {"records": [], "counts": {}, "unparsed": 0, "start": time.time()}
         p.menu_capture_data({"duration_min": "3"}, None)   # should refuse, not start a 2nd
         assert p.logger.warning.called
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Zone-timer poll (door-status latency fix)
+# ────────────────────────────────────────────────────────────────────────────
+
+class TestZonePoll:
+    def test_as_zone_poll(self):
+        assert plugin._as_zone_poll(30) == 30
+        assert plugin._as_zone_poll("60") == 60
+        assert plugin._as_zone_poll(0) == 0            # 0 disables
+        assert plugin._as_zone_poll("0") == 0
+        assert plugin._as_zone_poll(2) == plugin.MIN_ZONE_POLL_S       # clamped up
+        assert plugin._as_zone_poll("abc") == plugin.DEFAULT_ZONE_POLL_S
+        assert plugin._as_zone_poll("") == plugin.DEFAULT_ZONE_POLL_S
+
+    def test_zone_dump_respects_recent_realtime_update(self):
+        p = plugin.Plugin("com.clives.indigoplugin.honeywell-envisalink",
+                          "HoneywellEnvisalink", "0.5.0-beta", {})
+        p.logger = MagicMock()
+        p.zone_poll_seconds = 30
+        d4, d8 = MagicMock(), MagicMock()
+        p.zone_devs = {4: d4, 8: d8}
+        p.zone_last_change = {4: time.time()}          # zone 4 just changed via %01
+        frame = types.SimpleNamespace(payload="0000" * 7 + "FFFF")   # zone 8 open per dump
+        p._handle_zone_timer_dump(frame)
+        d8.updateStatesOnServer.assert_called()        # stale zone refreshed from the dump
+        d4.updateStatesOnServer.assert_not_called()    # fresh zone left to the %01 stream

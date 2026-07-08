@@ -32,6 +32,11 @@
         <Description>When ON, the plugin reads state from the panel and updates Indigo devices, but BLOCKS all arm/disarm/bypass commands from being sent. Recommended on first install — disable only when you've verified state reading works correctly.</Description>
     </Field>
 
+    <Field id="zone_poll_seconds" type="textfield" defaultValue="30">
+        <Label>Zone status refresh (seconds):</Label>
+        <Description>How often to poll the panel's zone-timer dump so door/window zone open-closed status stays current. Some zone changes (a door closing in particular) are not pushed by the panel in real time, so this fills the gap with a single lightweight read each interval. 30 is a good balance. Increase it to be gentler on the Envisalink, or set 0 to turn polling off entirely. Motion and most changes still update instantly regardless of this setting.</Description>
+    </Field>
+
     <Field id="debug_protocol" type="checkbox" defaultValue="false">
         <Label>Verbose protocol logging:</Label>
         <Description>Logs every raw TPI line sent and received (user codes redacted). Useful for diagnosing connection or panel-compatibility issues. Generates a lot of log output — leave off in normal operation.</Description>

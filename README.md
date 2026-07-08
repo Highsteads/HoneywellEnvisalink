@@ -13,6 +13,12 @@
 
 An [Indigo Domotics](https://www.indigodomo.com) plugin that connects **Honeywell Vista alarm panels** to Indigo via an **Envisalink** network module.
 
+## What's new in v0.5.0-beta
+
+Faster, more reliable door and window status. A tester noticed that motion sensors updated in Indigo almost instantly, but a door closing could take a couple of minutes to show as shut. That's because Honeywell panels push some zone changes in real time but leave others to be worked out from the panel's zone timers — which is exactly what the Envisalink's own app polls for. The plugin now does the same: it gently polls the zone-timer dump on a set interval and refreshes any zone the real-time stream hasn't just changed, so a door closing shows up within seconds rather than minutes.
+
+It's a single lightweight read on each interval — deliberately gentle, nothing like the command flood that has caused keypad lockouts with other integrations — and there's a new **"Zone status refresh (seconds)"** setting in the plugin config: 30 seconds by default, raise it to be even lighter on the Envisalink, or set it to 0 to turn polling off and rely on real-time updates only. Motion and most changes still update instantly regardless.
+
 ## What's new in v0.4.1-beta
 
 First real capture off a live Vista 20P, and the plugin read the whole thing correctly — every armed state, the alarm and alarm-memory, the disarm, and the right zones open. One small fix came out of it: the panel sends a special "Alarm Canceled" keypad line with a couple of non-numeric fields, which the parser was throwing away. It now takes that in its stride (and every real frame from the capture is baked into the test suite so it can't regress). Reading a real panel is now confirmed working — the remaining unknown is only the outgoing arm/disarm side.
@@ -92,7 +98,7 @@ Alarm panels are not lights — getting it wrong has real consequences. The plug
 
 ## Testing & debugging from afar
 
-I (the author) don't have a Honeywell panel to test against, which is why this is a v0.4.1-beta explicitly looking for test pilots. To make remote debugging
+I (the author) don't have a Honeywell panel to test against, which is why this is a v0.5.0-beta explicitly looking for test pilots. To make remote debugging
 tractable, the plugin ships with:
 
 ### Capture protocol data for me (the most useful thing you can do)

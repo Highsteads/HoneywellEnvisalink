@@ -19,7 +19,7 @@ from honeywell_protocol import (
     encode_login, encode_keepalive, encode_dump_zone_timers, encode_keypress,
     encode_keystroke_sequence, encode_disarm, encode_arm_away, encode_arm_stay,
     encode_arm_instant, encode_arm_max, encode_bypass_zone,
-    redact_line_for_log, flag_names, decode_zone_timer_dump,
+    redact_line_for_log, flag_names, decode_zone_timer_dump, open_zones_from_timer_dump,
     ZoneBitmap, PartitionState,
     FLAG_READY, FLAG_AC_PRESENT, FLAG_ARMED_AWAY, FLAG_ARMED_STAY,
     FLAG_ARMED_NO_ENTRY, FLAG_ALARM, FLAG_ALARM_IN_MEMORY, FLAG_BYPASS,
@@ -323,6 +323,24 @@ class TestZoneTimerDump:
 
     def test_all_zero_is_empty(self):
         assert decode_zone_timer_dump("0" * 128) == {}
+
+
+class TestZoneTimerOpen:
+    def test_real_hardware_dump_one_open_zone(self):
+        # From the tester's Vista 20P %FF dump — only the motion zone (8) read open.
+        payload = "000060FE000000009FFDDEEC0000FCFFB7FF00003AF2"
+        assert open_zones_from_timer_dump(payload) == {8}
+
+    def test_ticks_boundary(self):
+        # ticks = 0xFFFF - value; open iff ticks <= 3.
+        assert open_zones_from_timer_dump("FFFF") == {1}   # ticks 0
+        assert open_zones_from_timer_dump("FCFF") == {1}   # swap FFFC -> ticks 3
+        assert open_zones_from_timer_dump("FBFF") == set()  # swap FFFB -> ticks 4
+        assert open_zones_from_timer_dump("0000") == set()  # ticks 0xFFFF
+
+    def test_zone_numbering(self):
+        # zone 3 open (FFFF in the 3rd word), others closed
+        assert open_zones_from_timer_dump("00000000FFFF0000") == {3}
 
 
 class TestZoneBitmap:

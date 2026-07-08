@@ -6,7 +6,7 @@
 #              Pure functions for easy testing with mock data.
 # Author:      Highsteads / CliveS & Claude Opus 4.8
 # Date:        07-07-2026
-# Version:     0.4.1-beta
+# Version:     0.5.0-beta
 #
 # References used to build this:
 #   - Eyez-On Envisalink TPI specification (Honeywell)
@@ -382,6 +382,34 @@ def decode_zone_timer_dump(payload: str) -> dict:
             timers[zone] = value
         zone += 1
     return timers
+
+
+def open_zones_from_timer_dump(payload: str) -> Set[int]:
+    """
+    The set of zones currently OPEN according to a %FF zone-timer dump.
+
+    Each zone is a 4-hex little-endian word. The word is best read as
+    ``0xFFFF`` when the zone was just faulted, counting down as time passes since
+    the last fault, so ``ticks = 0xFFFF - value`` is "how long ago it faulted".
+    A zone is treated as open when ``ticks <= 3`` — i.e. faulted within the last
+    few ticks. This matches pyenvisalink's ``is_zone_open_from_zonedump`` and was
+    cross-checked against a real Vista 20P dump (the one open motion zone read
+    exactly 3 ticks; every unused/closed zone read far higher).
+    """
+    open_zones: Set[int] = set()
+    hexdata = payload.strip()
+    zone = 1
+    for i in range(0, len(hexdata) - (len(hexdata) % 4), 4):
+        chunk = hexdata[i:i + 4]
+        try:
+            value = int(chunk[2:4] + chunk[0:2], 16)   # little-endian → int
+        except ValueError:
+            zone += 1
+            continue
+        if (0xFFFF - value) <= 3:
+            open_zones.add(zone)
+        zone += 1
+    return open_zones
 
 
 def parse_zone_state(frame: RawFrame) -> Optional[ZoneBitmap]:

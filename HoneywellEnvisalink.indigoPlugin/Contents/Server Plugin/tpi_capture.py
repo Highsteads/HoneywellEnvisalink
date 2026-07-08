@@ -7,7 +7,7 @@
 #              tools/capture_tpi.py, so the two can never drift.
 # Author:      Highsteads / CliveS & Claude Opus 4.8
 # Date:        07-07-2026
-# Version:     0.4.1-beta
+# Version:     0.5.0-beta
 
 import json
 import os

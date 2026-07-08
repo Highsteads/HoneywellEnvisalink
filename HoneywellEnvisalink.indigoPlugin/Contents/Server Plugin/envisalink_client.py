@@ -7,7 +7,7 @@
 #              in both directions (with user codes redacted).
 # Author:      Highsteads / CliveS & Claude Opus 4.8
 # Date:        07-07-2026
-# Version:     0.4.1-beta
+# Version:     0.5.0-beta
 
 import socket
 import threading
@@ -18,7 +18,7 @@ from typing import Callable, Optional
 
 from honeywell_protocol import (
     LoginResult, RawFrame, parse_frame, encode_login, encode_keepalive,
-    redact_line_for_log,
+    encode_dump_zone_timers, redact_line_for_log,
 )
 
 
@@ -64,10 +64,15 @@ class EnvisalinkClient:
         port: int = DEFAULT_PORT,
         debug_protocol: bool = False,
         on_raw_line: Optional[Callable[[str], None]] = None,
+        zone_poll_interval_s: int = 0,
     ):
         self.host = host
         self.password = password
         self.port = port
+        # Periodically re-request the zone-timer dump so zone open/closed stays
+        # fresh (some zone changes — e.g. a door closing — are not pushed in real
+        # time). 0 disables. A single ^02 read per interval, deliberately gentle.
+        self.zone_poll_interval_s = zone_poll_interval_s
         self.on_frame = on_frame
         self.on_login = on_login or (lambda r: None)
         self.on_disconnect = on_disconnect or (lambda r: None)
@@ -287,6 +292,7 @@ class EnvisalinkClient:
         buf = b""
         login_done = False
         last_keepalive = time.time()
+        last_zone_poll = time.time()
         while not self._stop_evt.is_set():
             try:
                 chunk = sock.recv(4096)
@@ -301,6 +307,11 @@ class EnvisalinkClient:
                 if login_done and time.time() - last_keepalive > KEEPALIVE_INTERVAL_S:
                     self.send_raw(encode_keepalive())
                     last_keepalive = time.time()
+                # Periodic zone-timer dump so door/zone status stays fresh.
+                if (login_done and self.zone_poll_interval_s
+                        and time.time() - last_zone_poll >= self.zone_poll_interval_s):
+                    self.send_raw(encode_dump_zone_timers())
+                    last_zone_poll = time.time()
                 continue
             except OSError as e:
                 self._log("warning", f"recv error: {e}")
