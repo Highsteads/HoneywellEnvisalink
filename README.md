@@ -1,11 +1,10 @@
 # HoneywellEnvisalink
 
-> # 🚧 BETA — v0.4.1-beta — state-reading now confirmed on a real Honeywell panel
+> # 🚧 BETA (shake-down) — v0.4.1-beta — reading AND arming/disarming now confirmed on a real Honeywell panel
 >
-> A tester on a **Vista 20P with an EVL4** has now run a full capture on real hardware, and the plugin read the panel correctly all the way through: ready,
-> arm stay, arm away, exit delay, **alarm and alarm-memory**, disarm and arm-instant, plus the right **zones** showing open. So the hard part — reading a real
-> Honeywell panel — is working. The one thing still to confirm is the **outgoing arm/disarm commands** (sending, with test mode off), which no tester has
-> exercised yet, so this is still a beta looking for a pilot to try that last piece.
+> A tester on a **Vista 20P with an EVL4** has now confirmed the plugin end to end on real hardware: it reads the panel correctly (ready, armed, exit delay,
+> alarm and alarm-memory, doors/windows/motion open-closed) **and successfully arms and disarms the panel from Indigo**. Everything the plugin is meant to do
+> is now working on a real system. It's kept in beta for a short shake-down — a few days of real-world use — before being declared 1.0.
 >
 > **Do not install this on a panel you depend on for security without reading the [Safety design](#safety-design) section first.** Test mode is on by
 > default for exactly this reason.
