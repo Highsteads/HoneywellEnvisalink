@@ -1,15 +1,16 @@
 # HoneywellEnvisalink
 
-> # 🚧 BETA (shake-down) — v0.4.1-beta — reading AND arming/disarming now confirmed on a real Honeywell panel
+> # 🚧 BETA (shake-down) — v0.5.1-beta — reading AND arming/disarming now confirmed on a real Honeywell panel
 >
-> A tester on a **Vista 20P with an EVL4** has now confirmed the plugin end to end on real hardware: it reads the panel correctly (ready, armed, exit delay,
-> alarm and alarm-memory, doors/windows/motion open-closed) **and successfully arms and disarms the panel from Indigo**. Everything the plugin is meant to do
-> is now working on a real system. It's kept in beta for a short shake-down — a few days of real-world use — before being declared 1.0.
+> **Tested end to end on a real Vista 20P with an EVL4:** it reads the panel correctly (ready, armed, exit delay, alarm and alarm-memory, doors/windows/motion
+> open-closed) **and successfully arms and disarms the panel from Indigo**. Everything the plugin is meant to do is now working on a real system. It's kept in
+> beta for a short shake-down — a few days of real-world use — before being declared 1.0.
 >
 > **Do not install this on a panel you depend on for security without reading the [Safety design](#safety-design) section first.** Test mode is on by
 > default for exactly this reason.
 >
-> If you've got Honeywell hardware and are up for being a beta tester, see [Testing & debugging from afar](#testing--debugging-from-afar) below.
+> It's being actively tested against real Honeywell hardware, so it's no longer flying blind — but more hands are always welcome. If you've got Honeywell
+> kit and would like to help, see [Testing & debugging from afar](#testing--debugging-from-afar) below.
 
 An [Indigo Domotics](https://www.indigodomo.com) plugin that connects **Honeywell Vista alarm panels** to Indigo via an **Envisalink** network module.
 
@@ -19,7 +20,7 @@ Self-monitoring for the zone polling. If you turn the zone-status refresh right 
 
 ## What's new in v0.5.0-beta
 
-Faster, more reliable door and window status. A tester noticed that motion sensors updated in Indigo almost instantly, but a door closing could take a couple of minutes to show as shut. That's because Honeywell panels push some zone changes in real time but leave others to be worked out from the panel's zone timers — which is exactly what the Envisalink's own app polls for. The plugin now does the same: it gently polls the zone-timer dump on a set interval and refreshes any zone the real-time stream hasn't just changed, so a door closing shows up within seconds rather than minutes.
+Faster, more reliable door and window status. In testing, motion sensor status updated in Indigo almost instantly, but a door closing could take a couple of minutes to show as shut. That's because Honeywell panels push some zone changes in real time but leave others to be worked out from the panel's zone timers — which is exactly what the Envisalink's own app polls for. The plugin now does the same: it gently polls the zone-timer dump on a set interval and refreshes any zone the real-time stream hasn't just changed, so a door closing shows up within seconds rather than minutes.
 
 It's a single lightweight read on each interval — deliberately gentle, nothing like the command flood that has caused keypad lockouts with other integrations — and there's a new **"Zone status refresh (seconds)"** setting in the plugin config: 30 seconds by default, raise it to be even lighter on the Envisalink, or set it to 0 to turn polling off and rely on real-time updates only. Motion and most changes still update instantly regardless.
 
@@ -35,13 +36,13 @@ Under the hood the menu capture and the standalone `tools/capture_tpi.py` now sh
 
 ## What's new in v0.3.0-beta
 
-The plugin met real hardware for the first time — and it exposed that the whole protocol layer was built against the wrong wire format. Real Envisalink Honeywell panels frame every message with a trailing `$` and no checksum, use a 16-bit keypad LED field, and send keystrokes one at a time under different command codes. The first releases assumed a DSC-style 2-character checksum, an 8-bit LED field and bundled keystrokes, so on a real panel it connected, logged in, and then rejected every single frame as a bad checksum (the tester saw the connection go live but zero panel state come through).
+The plugin met real hardware for the first time — and it exposed that the whole protocol layer was built against the wrong wire format. Real Envisalink Honeywell panels frame every message with a trailing `$` and no checksum, use a 16-bit keypad LED field, and send keystrokes one at a time under different command codes. The first releases assumed a DSC-style 2-character checksum, an 8-bit LED field and bundled keystrokes, so on a real panel it connected, logged in, and then rejected every single frame as a bad checksum (on real hardware the connection went live but zero panel state came through).
 
-- **Protocol rewritten to the real Envisalink Honeywell TPI.** Framing, the 16-bit keypad flags, the partition and Contact ID messages, and the outgoing arm/disarm/keypress commands have all been corrected to what real panels actually speak — verified against the exact frames the tester captured on a Vista 20P.
-- **The mock server now speaks the real framing too**, so the automated tests can never drift back to the old wrong model. The tester's real captured frames are baked in as regression fixtures.
+- **Protocol rewritten to the real Envisalink Honeywell TPI.** Framing, the 16-bit keypad flags, the partition and Contact ID messages, and the outgoing arm/disarm/keypress commands have all been corrected to what real panels actually speak — verified against the exact frames captured on a real Vista 20P.
+- **The mock server now speaks the real framing too**, so the automated tests can never drift back to the old wrong model. The real captured frames are baked in as regression fixtures.
 - **A KeepAlive poll** is now sent periodically to keep the module's session open.
 
-This is the change that should take the plugin from "connects but shows nothing" to "actually reads your panel". The credential-redaction and robustness work from v0.2.0-beta (below) all carried through — and the tester confirmed the diagnostic bundle came out with the password already masked.
+This is the change that should take the plugin from "connects but shows nothing" to "actually reads your panel". The credential-redaction and robustness work from v0.2.0-beta (below) all carried through — and testing confirmed the diagnostic bundle came out with the password already masked.
 
 The automated suite is 77 cases against the real protocol, including the real-hardware captures.
 
@@ -102,8 +103,8 @@ Alarm panels are not lights — getting it wrong has real consequences. The plug
 
 ## Testing & debugging from afar
 
-I (the author) don't have a Honeywell panel to test against, which is why this is a v0.5.1-beta explicitly looking for test pilots. To make remote debugging
-tractable, the plugin ships with:
+I (the author) don't have a Honeywell panel of my own, so it's being shaken down against real hardware by an Indigo user with a Vista panel — no longer flying
+blind, but still in beta while it beds in, and more hands are welcome. To make remote debugging tractable, the plugin ships with:
 
 ### Capture protocol data for me (the most useful thing you can do)
 The easiest way is right in the plugin: **Plugins → HoneywellEnvisalink → Capture protocol data**. Choose how long to run it, then follow the short list of
