@@ -1,6 +1,6 @@
 # HoneywellEnvisalink
 
-> # 🚧 BETA (shake-down) — v0.5.1-beta — reading AND arming/disarming now confirmed on a real Honeywell panel
+> # 🚧 BETA (shake-down) — v0.5.2-beta — reading AND arming/disarming now confirmed on a real Honeywell panel
 >
 > **Tested end to end on a real Vista 20P with an EVL4:** it reads the panel correctly (ready, armed, exit delay, alarm and alarm-memory, doors/windows/motion
 > open-closed) **and successfully arms and disarms the panel from Indigo**. Everything the plugin is meant to do is now working on a real system. It's kept in
@@ -13,6 +13,18 @@
 > kit and would like to help, see [Testing & debugging from afar](#testing--debugging-from-afar) below.
 
 An [Indigo Domotics](https://www.indigodomo.com) plugin that connects **Honeywell Vista alarm panels** to Indigo via an **Envisalink** network module.
+
+## What's new in v0.5.2-beta
+
+**A fire alarm was not reporting as an alarm.** The partition state was worked out from the keypad flags, and while a burglary alarm set the partition to ALARM, a fire alarm fell through to the armed and ready branches instead. So the partition never showed ALARM and the alarm event never fired. Fire now raises ALARM the same as any other alarm. If you have triggers hanging off the alarm event, they were blind to fire until this release.
+
+Three more fixes came out of the same pass:
+
+- **Armed-Max was missed on some panels.** The code looked for "MAXIMUM" on the keypad display, but real panels show "MAX" as well. Both now match.
+- **A failed trigger could swallow the event for good.** The partition event was latched as sent before it was actually fired, so an exception mid-fire left the latch set and the event never fired and never retried. It now fires first and latches after, and each trigger is isolated so one bad trigger cannot block the rest.
+- **Two lists were being read while Indigo was changing them.** The trigger and zone-device lists are updated from Indigo's thread while the network thread walks them. Both are now snapshotted before iterating.
+
+The automated suite is 138 cases.
 
 ## What's new in v0.5.1-beta
 
@@ -77,7 +89,7 @@ serial board (Ademco plugin), but nothing that combines **Honeywell + Envisalink
 
 **Envisalink:** EVL3, EVL4, EVL5 (firmware auto-detected on connect)
 **Panels:** Vista 15P, 20P, 21iP, 128BP, 250BP (and any other Vista-compatible model that the Envisalink supports)
-**Up to:** 3 partitions, 250 zones
+**Up to:** 8 partitions, 250 zones — the plugin accepts those ranges, and how many your own panel has depends on the model
 
 ## Features
 
@@ -85,7 +97,7 @@ serial board (Ademco plugin), but nothing that combines **Honeywell + Envisalink
 - Indigo devices for the **Panel** (overall connectivity), each **Partition** (armed/disarmed/alarm/exit/entry/etc.) and each **Zone** (open/closed/bypass/trouble/alarm)
 - Live virtual-keypad mirror — the actual 32-char LCD text the keypad shows, the LED state, beep codes
 - Actions: **Arm Away, Arm Stay, Arm Instant, Arm Max, Disarm, Bypass Zone**
-- Events you can hook triggers to: alarm triggered, partition armed/disarmed, Envisalink disconnected
+- Seven events you can hook triggers to: **Alarm triggered** (burglary or fire), **Partition armed** — away, stay, instant and max each firing separately — **Partition disarmed**, and **Envisalink disconnected**
 - Auto-reconnect with exponential backoff
 - Contact ID (CID) real-time event capture for full alarm-monitoring fidelity
 
