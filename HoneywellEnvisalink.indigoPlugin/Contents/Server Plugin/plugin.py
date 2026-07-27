@@ -323,9 +323,15 @@ class Plugin(indigo.PluginBase):
         # indigo.trigger.execute carries no payload, so per-partition context
         # cannot ride on the event itself — trigger scripts that need to know
         # which partition fired should read the partition device's state.
-        for trig in self.event_triggers.values():
+        # Snapshot: triggerStart/StopProcessing mutate event_triggers from the
+        # Indigo thread while we iterate here on the client thread. Isolate each
+        # trigger so one failure can't block the rest (or the caller's de-spam latch).
+        for trig in list(self.event_triggers.values()):
             if trig.pluginTypeId == event_id:
-                indigo.trigger.execute(trig)
+                try:
+                    indigo.trigger.execute(trig)
+                except Exception as e:
+                    self.logger.error(f"firing '{event_id}' on trigger {trig.id}: {e}")
 
     # Map a high-level partition state to the custom event it should fire.
     _PARTITION_EVENTS = {
@@ -346,8 +352,8 @@ class Plugin(indigo.PluginBase):
         firmware) still gets armed/disarmed/alarm events."""
         evt = self._PARTITION_EVENTS.get(state)
         if evt and self.partition_last_event.get(partition) != evt:
-            self.partition_last_event[partition] = evt
             self._fire_event(evt)
+            self.partition_last_event[partition] = evt   # latch only after firing
 
     # ── Frame dispatch ─────────────────────────────────────────────────────
 
@@ -431,7 +437,7 @@ class Plugin(indigo.PluginBase):
         # Record the update time so the periodic %FF poll won't override a zone
         # that has just changed.
         now = time.time()
-        for znum, dev in self.zone_devs.items():
+        for znum, dev in list(self.zone_devs.items()):   # snapshot: deviceStart/StopComm mutates on the Indigo thread
             self._set_zone(dev, znum in zb.open_zones)
             self.zone_last_change[znum] = now
 
@@ -444,7 +450,7 @@ class Plugin(indigo.PluginBase):
         open_zones = open_zones_from_timer_dump(frame.payload)
         now = time.time()
         window = max(self.zone_poll_seconds, MIN_ZONE_POLL_S)
-        for znum, dev in self.zone_devs.items():
+        for znum, dev in list(self.zone_devs.items()):
             if now - self.zone_last_change.get(znum, 0) < window:
                 continue
             self._set_zone(dev, znum in open_zones)
@@ -670,7 +676,7 @@ class Plugin(indigo.PluginBase):
 
     def showPluginInfo(self, valuesDict=None, typeId=None):
         extras = [
-            ("Release:",   "BETA — untested on real hardware, report issues to CliveS on Indigo forum"),
+            ("Release:",   "BETA — working on real Honeywell hardware, report issues to CliveS on the Indigo forum"),
             ("EVL host:",  self.host or "(not configured)"),
             ("Test mode:", "ON (commands suppressed)" if self.test_mode else "OFF (commands LIVE)"),
         ]
@@ -723,14 +729,16 @@ class Plugin(indigo.PluginBase):
         if not self.client:
             self.logger.error("no client running")
             return
+        stats = self.client.get_stats()
+        stats["host"] = "<redacted>"     # keep the local EVL IP out of a shared file
         bundle = {
             "plugin_version": PLUGIN_VERSION,
             "plugin_id": PLUGIN_ID,
-            "host": self.host,
+            "host": "<redacted>",        # matches the capture path — no local topology in a shared file
             "port": self.port,
             "test_mode": self.test_mode,
             "debug_protocol": self.debug_protocol,
-            "stats": self.client.get_stats(),
+            "stats": stats,
             "recent_traffic": [
                 {"ts": ts, "dir": d, "line": line}
                 for ts, d, line in self.client.get_debug_log()

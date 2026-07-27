@@ -242,6 +242,20 @@ class EnvisalinkClient:
         if self.debug_protocol:
             self._log("info", f"{direction}  {safe}")
 
+    def _fire_login(self, result):
+        try:
+            self.on_login(result)
+        except Exception as e:
+            self._log("error", f"on_login callback raised: {e}")
+
+    def _fire_disconnect(self, reason):
+        # Guarded: a raise here used to escape _run() and kill the reconnect thread
+        # permanently (silent monitoring death).
+        try:
+            self.on_disconnect(reason)
+        except Exception as e:
+            self._log("error", f"on_disconnect callback raised: {e}")
+
     def _run(self):
         """Background thread: connect → login → recv loop → reconnect on failure."""
         reconnect_delay = DEFAULT_RECONNECT_DELAY_S
@@ -260,14 +274,14 @@ class EnvisalinkClient:
                           "login FAILED — stopping reconnect. Fix the EVL password "
                           "in plugin config (or IndigoSecrets.py), then reload the plugin.")
                 if not self._stop_evt.is_set():
-                    self.on_disconnect("auth_failed")
+                    self._fire_disconnect("auth_failed")
                 break
             # Suppress the disconnect callback when we're stopping — the plugin
             # is mid-shutdown, calling back into indigo APIs (trigger.execute,
             # device.updateStateOnServer) from this thread races the host's
             # cleanup and is the kind of thing that can stall the host exit.
             if not self._stop_evt.is_set():
-                self.on_disconnect("loop_exited")
+                self._fire_disconnect("loop_exited")
             if self._stop_evt.is_set():
                 break
             self._log("info", f"reconnecting in {reconnect_delay}s")
@@ -368,17 +382,23 @@ class EnvisalinkClient:
                         self._connected = True
                         self._auth_failed = False
                         self._log("info", "login OK — connection live")
-                        self.on_login(LoginResult.OK)
+                        self._fire_login(LoginResult.OK)
                         continue
                     if text == "FAILED":
                         self._auth_failed = True   # _run() sees this and stops retrying
-                        self.on_login(LoginResult.FAILED)
+                        self._fire_login(LoginResult.FAILED)
+                        try:
+                            sock.close()             # cleanup skipped by the early return below
+                        except OSError:
+                            pass
+                        self._sock = None
+                        self._connected = False
                         return
                     if text == "Timed Out!":
                         # Module gave up waiting for the password — not a bad
                         # credential, so reconnect rather than latching auth_failed.
                         self._log("warning", "login timed out — will reconnect")
-                        self.on_login(LoginResult.TIMEOUT)
+                        self._fire_login(LoginResult.TIMEOUT)
                         break
                     # Some EVL firmware sends a welcome banner before the prompt — ignore
                     continue

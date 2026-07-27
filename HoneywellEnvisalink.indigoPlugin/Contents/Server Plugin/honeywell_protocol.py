@@ -490,7 +490,7 @@ def derive_partition_state(ku: KeypadUpdate) -> PartitionState:
     exit vs entry delay and instant vs max vs stay.
     """
     text = ku.display_text.upper()
-    if ku.alarm:
+    if ku.alarm or ku.fire:
         return PartitionState.ALARM
     if ku.alarm_in_memory or "ALARM MEMORY" in text:
         return PartitionState.ALARM_MEMORY
@@ -501,7 +501,7 @@ def derive_partition_state(ku: KeypadUpdate) -> PartitionState:
     if ku.armed:
         if "INSTANT" in text:
             return PartitionState.ARMED_INSTANT
-        if "MAXIMUM" in text:
+        if "MAX" in text:                    # real panels show "MAX" or "MAXIMUM"
             return PartitionState.ARMED_MAX
         if ku.armed_stay or "STAY" in text:
             return PartitionState.ARMED_STAY

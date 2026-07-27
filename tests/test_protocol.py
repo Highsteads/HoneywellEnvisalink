@@ -23,7 +23,7 @@ from honeywell_protocol import (
     ZoneBitmap, PartitionState,
     FLAG_READY, FLAG_AC_PRESENT, FLAG_ARMED_AWAY, FLAG_ARMED_STAY,
     FLAG_ARMED_NO_ENTRY, FLAG_ALARM, FLAG_ALARM_IN_MEMORY, FLAG_BYPASS,
-    FLAG_CHIME, FLAG_SYSTEM_TROUBLE,
+    FLAG_CHIME, FLAG_SYSTEM_TROUBLE, FLAG_FIRE,
     ProtocolError,
 )
 
@@ -268,6 +268,16 @@ class TestDerivedState:
     def test_alarm_memory_from_flag(self):
         ku = keypad(FLAG_ALARM_IN_MEMORY | FLAG_READY, text="Ready")
         assert derive_partition_state(ku) == PartitionState.ALARM_MEMORY
+
+    def test_fire_alarm_is_alarm(self):
+        # A fire alarm sets the fire bit, not necessarily the burglary ALARM bit —
+        # must still derive ALARM, not NOT_READY.
+        ku = keypad(FLAG_FIRE | FLAG_AC_PRESENT, text="FIRE 12 KITCHEN")
+        assert derive_partition_state(ku) == PartitionState.ALARM
+
+    def test_armed_max_matches_short_text(self):
+        ku = keypad(FLAG_ARMED_AWAY | FLAG_ARMED_NO_ENTRY, text="ARMED ***MAX***")
+        assert derive_partition_state(ku) == PartitionState.ARMED_MAX
 
     def test_trouble(self):
         ku = keypad(FLAG_SYSTEM_TROUBLE, text="Check 03")
