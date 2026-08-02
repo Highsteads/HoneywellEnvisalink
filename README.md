@@ -1,6 +1,6 @@
 # HoneywellEnvisalink
 
-> # 🚧 BETA (shake-down) — v0.5.2-beta — reading AND arming/disarming now confirmed on a real Honeywell panel
+> # 🚧 BETA (shake-down) — v0.5.2 — reading AND arming/disarming now confirmed on a real Honeywell panel
 >
 > **Tested end to end on a real Vista 20P with an EVL4:** it reads the panel correctly (ready, armed, exit delay, alarm and alarm-memory, doors/windows/motion
 > open-closed) **and successfully arms and disarms the panel from Indigo**. Everything the plugin is meant to do is now working on a real system. It's kept in
@@ -14,7 +14,7 @@
 
 An [Indigo Domotics](https://www.indigodomo.com) plugin that connects **Honeywell Vista alarm panels** to Indigo via an **Envisalink** network module.
 
-## What's new in v0.5.2-beta
+## What's new in v0.5.2
 
 **A fire alarm was not reporting as an alarm.** The partition state was worked out from the keypad flags, and while a burglary alarm set the partition to ALARM, a fire alarm fell through to the armed and ready branches instead. So the partition never showed ALARM and the alarm event never fired. Fire now raises ALARM the same as any other alarm. If you have triggers hanging off the alarm event, they were blind to fire until this release.
 
