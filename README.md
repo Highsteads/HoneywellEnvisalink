@@ -1,5 +1,7 @@
 # HoneywellEnvisalink
 
+**Version:** 0.5.2 | **Author:** CliveS & Claude
+
 > # 🚧 BETA (shake-down) — v0.5.2 — reading AND arming/disarming now confirmed on a real Honeywell panel
 >
 > **Tested end to end on a real Vista 20P with an EVL4:** it reads the panel correctly (ready, armed, exit delay, alarm and alarm-memory, doors/windows/motion
