@@ -4,8 +4,8 @@
 # Description: HoneywellEnvisalink — Indigo plugin connecting Honeywell Vista
 #              alarm panels to Indigo via Envisalink network modules (EVL3/4/5).
 # Author:      Highsteads / CliveS & Claude Opus 5
-# Date:        27-07-2026
-# Version:     0.5.2
+# Date:        11-09-2026
+# Version:     0.5.3
 # Plugin ID:   com.clives.indigoplugin.honeywell-envisalink
 
 import os as _os
@@ -45,7 +45,7 @@ try:
 except ImportError:
     ENVISALINK_PASSWORD = ""
 
-PLUGIN_VERSION = "0.5.2"
+PLUGIN_VERSION = "0.5.3"
 PLUGIN_ID = "com.clives.indigoplugin.honeywell-envisalink"
 
 DEFAULT_PORT = 4025

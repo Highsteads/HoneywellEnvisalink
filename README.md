@@ -1,6 +1,6 @@
 # HoneywellEnvisalink
 
-**Version:** 0.5.2 | **Author:** CliveS & Claude
+**Version:** 0.5.3 | **Author:** CliveS & Claude
 
 > # 🚧 BETA (shake-down) — v0.5.2 — reading AND arming/disarming now confirmed on a real Honeywell panel
 >
@@ -15,6 +15,10 @@
 > kit and would like to help, see [Testing & debugging from afar](#testing--debugging-from-afar) below.
 
 An [Indigo Domotics](https://www.indigodomo.com) plugin that connects **Honeywell Vista alarm panels** to Indigo via an **Envisalink** network module.
+
+## What's new in v0.5.3
+
+**The bundle now carries the standard GitHub record.** Indigo plugins can carry a small note inside the bundle saying where their source lives on GitHub, spelt the way the Indigo Domotics and community plugins spell it. This one now has it, pointing at this repository. Nothing else changed.
 
 ## What's new in v0.5.2
 
