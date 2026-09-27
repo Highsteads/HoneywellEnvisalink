@@ -7,6 +7,14 @@ nav_order: 11
 
 The newest version is at the top. Every version so far is a beta.
 
+## 0.6.0 — 27 September 2026
+
+- **Numbers are checked when you save.** A zone left at 0, a partition number above 8 or a bypass zone outside 1 to 250 used to save without a word, and then the zone never updated or the command never went out. Now the dialog will not close until the number is one your panel has, and it tells you what to type.
+- **Test connection writes the plugin's details first**, the same lines as **Show Plugin Info**, so one copy of the Event Log holds everything I need when you ask for help on the forum.
+- **The red warning in Configure is up to date.** It said the plugin had never been tried on a real panel. It has now, on a Vista 20P with an Envisalink 4, where it reads the panel and arms and disarms it, and the warning says so.
+- **Turning test mode back on from the plugin menu** writes an ordinary line to the Event Log, as it should.
+- **A blank IndigoSecrets_example.py comes with the plugin**, holding the one setting it reads, `ENVISALINK_PASSWORD`.
+
 ## 0.5.3 — 11 September 2026
 
 The plugin carries a note of where its code lives on GitHub, the same way other Indigo plugins do. Nothing else changed.

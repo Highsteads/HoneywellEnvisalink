@@ -32,7 +32,7 @@ Add the devices first, so they are ready when the plugin connects. For each one,
 
 1. **Honeywell Panel (via Envisalink)** — add exactly one. Choose your **Panel model** and **Envisalink model**. These are for your own reference and do not change how the plugin works.
 2. **Honeywell Partition** — add one for each partition you use. Set **Partition number (1-8)**, which is 1 in most homes.
-3. **Honeywell Zone** — add one for each zone you want to see. Type the zone's number into **Zone number (1-250)**. It starts at 0, and a zone left at 0 is never updated. **Zone type** is for your own reference.
+3. **Honeywell Zone** — add one for each zone you want to see. Type the zone's number into **Zone number (1-250)**. It starts at 0, and the device will not save until you type a number from 1 to 250. **Zone type** is for your own reference.
 
 ## 3. Connect to the Envisalink
 

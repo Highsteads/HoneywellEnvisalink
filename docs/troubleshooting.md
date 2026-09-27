@@ -36,7 +36,7 @@ Check its **Partition number (1-8)** matches the partition on your panel. Most h
 
 ## A zone device never changes
 
-Check its **Zone number (1-250)** matches the zone's number in your panel. A zone left at 0 is never updated.
+Check its **Zone number (1-250)** matches the zone's number in your panel. A zone made before version 0.6.0 may still hold 0, which is never updated, so open it and type the right number.
 
 ## A door shows open for a while after it has closed
 

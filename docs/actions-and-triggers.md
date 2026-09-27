@@ -26,7 +26,7 @@ Each action works on a **Honeywell Partition** device and needs a user code. Eac
 2. In the action's type menu, find **HoneywellEnvisalink (BETA)** under **Device Actions**, and pick the action.
 3. Choose the partition device.
 4. Type your code into **User code**. It must be 4 or 6 digits, and the box masks it.
-5. For **Bypass zone**, also type the zone's number, from 1 to 250, into **Zone to bypass**.
+5. For **Bypass zone**, also type the zone's number, from 1 to 250, into **Zone to bypass**. The action will not save with anything else.
 
 ### What happens when it runs
 

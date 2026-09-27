@@ -3,9 +3,12 @@
 # Filename:    plugin.py
 # Description: HoneywellEnvisalink — Indigo plugin connecting Honeywell Vista
 #              alarm panels to Indigo via Envisalink network modules (EVL3/4/5).
-# Author:      Highsteads / CliveS & Claude Opus 5
-# Date:        11-09-2026
-# Version:     0.5.3
+# Author:      Highsteads / CliveS & Claude Opus 5, Claude Opus 5.5
+# Date:        27-09-2026
+# Version:     0.6.0
+#   0.6.0 (27-09-2026, Claude Opus 5.5): partition/zone/bypass numbers checked in
+#         the dialogs, Test connection logs the plugin banner first, test-mode
+#         toggle logs at a real level, honest beta warning, IndigoSecrets_example.py.
 # Plugin ID:   com.clives.indigoplugin.honeywell-envisalink
 
 import os as _os
@@ -45,7 +48,7 @@ try:
 except ImportError:
     ENVISALINK_PASSWORD = ""
 
-PLUGIN_VERSION = "0.5.3"
+PLUGIN_VERSION = "0.6.0"
 PLUGIN_ID = "com.clives.indigoplugin.honeywell-envisalink"
 
 DEFAULT_PORT = 4025
@@ -95,6 +98,22 @@ def _as_zone_poll(value, default=DEFAULT_ZONE_POLL_S):
     if n <= 0:
         return 0
     return max(MIN_ZONE_POLL_S, n)
+
+
+# Ranges a Vista panel accepts. The protocol encoders refuse anything outside
+# them, so the dialogs check them first and say what is wrong in plain words.
+MIN_PARTITION, MAX_PARTITION = 1, 8
+MIN_ZONE, MAX_ZONE = 1, 250
+
+
+def _whole_number_in_range(value, low, high):
+    """Return the value as an int if it is a whole number from low to high
+    inclusive, otherwise None. Blank, text and decimals all give None."""
+    try:
+        n = int(str(value).strip())
+    except (ValueError, TypeError, AttributeError):
+        return None
+    return n if low <= n <= high else None
 
 
 class Plugin(indigo.PluginBase):
@@ -219,6 +238,41 @@ class Plugin(indigo.PluginBase):
                     raise ValueError
             except (ValueError, TypeError):
                 errs["port"] = "Port must be a whole number between 1 and 65535 (default 4025)."
+        if errs:
+            return (False, valuesDict, errs)
+        return (True, valuesDict)
+
+    def validateDeviceConfigUi(self, valuesDict, typeId, devId):
+        """Refuse a partition outside 1-8 or a zone outside 1-250 (a new zone
+        starts at 0, which the panel has no zone for)."""
+        errs = indigo.Dict()
+        if typeId == "partition":
+            if _whole_number_in_range(valuesDict.get("partition_number"),
+                                      MIN_PARTITION, MAX_PARTITION) is None:
+                errs["partition_number"] = (
+                    f"Enter a partition number from {MIN_PARTITION} to {MAX_PARTITION}. "
+                    "Most homes have one partition, number 1."
+                )
+        elif typeId == "zone":
+            if _whole_number_in_range(valuesDict.get("zone_number"),
+                                      MIN_ZONE, MAX_ZONE) is None:
+                errs["zone_number"] = (
+                    f"Enter the zone number from your panel, {MIN_ZONE} to {MAX_ZONE}. "
+                    "It is the number your keypad shows when this zone is open."
+                )
+        if errs:
+            return (False, valuesDict, errs)
+        return (True, valuesDict)
+
+    def validateActionConfigUi(self, valuesDict, typeId, devId):
+        """Refuse a bypass zone outside 1-250 when the action is saved."""
+        errs = indigo.Dict()
+        if typeId == "bypass_zone":
+            if _whole_number_in_range(valuesDict.get("zone_number"),
+                                      MIN_ZONE, MAX_ZONE) is None:
+                errs["zone_number"] = (
+                    f"Enter the zone to bypass, a number from {MIN_ZONE} to {MAX_ZONE}."
+                )
         if errs:
             return (False, valuesDict, errs)
         return (True, valuesDict)
@@ -650,10 +704,11 @@ class Plugin(indigo.PluginBase):
         if not code:
             self.logger.error("bypass_zone: invalid or missing user_code")
             return
-        try:
-            zone = int((action.props or {}).get("zone_number", "0"))
-        except (ValueError, TypeError):
-            self.logger.error("bypass_zone: invalid zone_number")
+        # An action saved before the dialog checked the zone can still hold 0 or
+        # 999 — refuse it here with a plain message rather than a traceback.
+        zone = _whole_number_in_range((action.props or {}).get("zone_number"), MIN_ZONE, MAX_ZONE)
+        if zone is None:
+            self.logger.error(f"bypass_zone: zone number must be from {MIN_ZONE} to {MAX_ZONE}")
             return
         self.client.send_keypresses(encode_bypass_zone(code, zone, self._partition_from(dev)))
 
@@ -674,19 +729,31 @@ class Plugin(indigo.PluginBase):
 
     # ── Menu items ─────────────────────────────────────────────────────────
 
-    def showPluginInfo(self, valuesDict=None, typeId=None):
-        extras = [
-            ("Release:",   "BETA — working on real Honeywell hardware, report issues to CliveS on the Indigo forum"),
+    def _banner_extras(self):
+        """The plugin-specific banner lines — one list, so Show Plugin Info and
+        Test connection always print the same thing."""
+        return [
+            ("Release:",   "BETA, tested on one Vista 20P with an EVL4. Report issues to CliveS on the Indigo forum"),
             ("EVL host:",  self.host or "(not configured)"),
             ("Test mode:", "ON (commands suppressed)" if self.test_mode else "OFF (commands LIVE)"),
         ]
+
+    def _log_banner(self):
+        # The version comes from Indigo (self.pluginVersion = Info.plist
+        # PluginVersion), never from a constant that can fall behind.
         if log_startup_banner:
-            log_startup_banner(self.pluginId, self.pluginDisplayName, self.pluginVersion, extras=extras)
+            log_startup_banner(self.pluginId, self.pluginDisplayName, self.pluginVersion,
+                               extras=self._banner_extras())
         else:
             indigo.server.log(f"{self.pluginDisplayName} v{self.pluginVersion}")
 
+    def showPluginInfo(self, valuesDict=None, typeId=None):
+        self._log_banner()
+
     def menu_test_connection(self, valuesDict=None, typeId=None):
         """Connect, log in, fetch a zone-timer dump, then report."""
+        # Banner first, so one paste of the log carries the environment AND the result.
+        self._log_banner()
         if not self.client:
             self.logger.error("no client running — check config")
             return
@@ -775,6 +842,7 @@ class Plugin(indigo.PluginBase):
         warn = "" if self.test_mode else " — COMMANDS NOW LIVE, can arm/disarm panel!"
         # NB: indigo.server.warningLogLevel does NOT exist (verified live) — passing
         # it raised AttributeError on exactly the commands-live branch. Use the
-        # documented logging level int instead.
+        # documented logging level int, and a real one on BOTH branches (level=None
+        # is not a logging level).
         indigo.server.log(f"Test mode now {'ON (safe)' if self.test_mode else 'OFF'}{warn}",
-                          level=logging.WARNING if not self.test_mode else None)
+                          level=logging.INFO if self.test_mode else logging.WARNING)

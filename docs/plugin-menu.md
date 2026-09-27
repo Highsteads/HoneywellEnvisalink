@@ -9,7 +9,7 @@ These are under **Plugins → HoneywellEnvisalink (BETA)**.
 
 | Menu item | What it does |
 |---|---|
-| **Test connection** | Writes the connection's figures to the Event Log — whether it is connected, how much has been sent and received, how many times it has connected, and when it last connected and last heard from the Envisalink. If it is connected, it also asks the panel for a fresh reading of the zones. If the plugin has no connection set up, it says to check the settings. |
+| **Test connection** | Writes the same details as **Show Plugin Info** first, so one copy of the Event Log holds everything needed for a forum post, then the connection's figures — whether it is connected, how much has been sent and received, how many times it has connected, and when it last connected and last heard from the Envisalink. If it is connected, it also asks the panel for a fresh reading of the zones. If the plugin has no connection set up, it says to check the settings. |
 | **Dump recent protocol traffic to log** | Writes the last 500 lines sent to and received from the Envisalink to the Event Log, with codes and the password masked. |
 | **Save diagnostic bundle (for sharing)** | Writes a file for me to look at if something goes wrong — see below. |
 | **Capture protocol data (for the author)...** | Records what your panel sends for a few minutes while you use your keypad, and writes a file you can share. It never arms or disarms anything. [Helping with the beta](helping-with-the-beta.md) explains how to use it. |

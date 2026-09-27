@@ -2,7 +2,7 @@
 
 **Connect a Honeywell Vista alarm panel to Indigo through an Envisalink, and see and control it from Indigo.**
 
-**Version:** 0.5.3 | **Author:** CliveS & Claude | **Needs:** Indigo 2022.1 or later, and an Envisalink 3, 4 or 5
+**Version:** 0.6.0 | **Author:** CliveS & Claude | **Needs:** Indigo 2022.1 or later, and an Envisalink 3, 4 or 5
 
 **This plugin is a beta.** I do not have a Honeywell panel myself, so it has been tested by an Indigo user on a real Vista 20P with an Envisalink 4, where it reads the panel correctly and has armed and disarmed it from Indigo. It starts in a safe test mode that cannot send commands, so please read [Safety and test mode](https://highsteads.github.io/HoneywellEnvisalink/safety.html) before you turn that off on a panel that protects your home.
 
@@ -47,14 +47,17 @@ The [full guide](https://highsteads.github.io/HoneywellEnvisalink/) goes through
 
 ## What's new
 
+**v0.6.0** — A zone left at 0, a partition above 8 or a bypass zone outside 1 to 250 is refused when you save it, with a message saying what to type.
+- **Test connection** writes the plugin's details first, as **Show Plugin Info** does.
+- The warning in **Configure** says what has really been tested: one Vista 20P with an Envisalink 4.
+- A blank `IndigoSecrets_example.py` comes with the plugin.
+
 **v0.5.3** — The plugin carries a note of where its code lives on GitHub, the same way other Indigo plugins do. Nothing else changed.
 
 **v0.5.2** — A fire alarm shows as ALARM and runs the **Alarm triggered** event, which it did not before.
 - **Armed Max** is recognised when the keypad shows MAX as well as MAXIMUM.
 - One failing trigger no longer stops the others, or loses the event.
 - The version number lost its "-beta" ending, so the Indigo Plugin Store will accept it.
-
-**v0.5.1-beta** — If the Envisalink says it cannot keep up, the Event Log has a warning suggesting you refresh the zones less often.
 
 Every version is listed in the [version history](https://highsteads.github.io/HoneywellEnvisalink/changelog.html).
 

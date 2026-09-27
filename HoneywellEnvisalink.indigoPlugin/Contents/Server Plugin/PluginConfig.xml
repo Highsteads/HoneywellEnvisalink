@@ -6,7 +6,7 @@
     </Field>
 
     <Field id="beta_warning" type="label" fontColor="red">
-        <Label>⚠ BETA SOFTWARE — has not been tested against real Honeywell hardware. Leave "Test mode" ON until you have verified state-reading works. Report any issues on the Indigo forum (user: CliveS).</Label>
+        <Label>BETA SOFTWARE. Tested on one real panel so far, a Vista 20P with an Envisalink 4, where it reads the panel and arms and disarms it. Other Vista models and the Envisalink 3 and 5 have not been tried yet. Leave "Test mode" ON until you have checked it reads your panel correctly. Report any issues on the Indigo forum (user: CliveS).</Label>
     </Field>
 
     <Field id="sep1" type="separator"/>

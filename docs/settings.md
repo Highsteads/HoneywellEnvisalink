@@ -23,7 +23,7 @@ Open these with **Plugins → HoneywellEnvisalink (BETA) → Configure**. Clicki
 
 If you would rather keep the Envisalink password out of Indigo's settings, you can put it in a file called `IndigoSecrets.py` in `/Library/Application Support/Perceptive Automation/`. Several of my plugins read their passwords from this file, and this one reads one setting from it, `ENVISALINK_PASSWORD`.
 
-If you already have the file, add this line to it. If not, create a plain text file with that name in that folder, holding just this line, with your own password between the quotes:
+If you already have the file, add this line to it. If not, create a plain text file with that name in that folder, holding just this line, with your own password between the quotes. There is a blank copy, `IndigoSecrets_example.py`, inside the plugin: right-click the `HoneywellEnvisalink.indigoPlugin` you downloaded, choose **Show Package Contents**, and look in **Contents**, then **Server Plugin**. After changing the file, choose **Plugins → HoneywellEnvisalink (BETA) → Reload**.
 
 ```python
 ENVISALINK_PASSWORD = "your-envisalink-password"
@@ -46,11 +46,11 @@ Open these by double-clicking a device in Indigo.
 
 | Setting | What it does |
 |---|---|
-| **Partition number (1-8)** | The partition this device follows and sends commands to, 1 to start with. Most homes have one partition, number 1. |
+| **Partition number (1-8)** | The partition this device follows and sends commands to, 1 to start with. Most homes have one partition, number 1. The device will not save with a number outside 1 to 8. |
 
 ### Honeywell Zone
 
 | Setting | What it does |
 |---|---|
-| **Zone number (1-250)** | The zone this device follows, as numbered in your panel. It starts at 0, and a zone left at 0 is never updated. |
+| **Zone number (1-250)** | The zone this device follows, as numbered in your panel. It starts at 0, and the device will not save until you type a number from 1 to 250. |
 | **Zone type** | What the zone is — door or window contact, motion detector, glass-break, smoke or heat, CO detector, panic button or other — for your own reference. It does not change how the plugin works. |

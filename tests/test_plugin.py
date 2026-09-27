@@ -222,3 +222,149 @@ class TestStrainWarning:
         p = self._p()
         p._handle_command_response(types.SimpleNamespace(code="^00", payload="00"))  # accepted
         assert not p.logger.warning.called
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Dialog validation — partition 1-8, zone 1-250, bypass zone 1-250 (0.6.0)
+# ────────────────────────────────────────────────────────────────────────────
+
+def _bare_plugin():
+    p = plugin.Plugin("com.clives.indigoplugin.honeywell-envisalink",
+                      "HoneywellEnvisalink", "0.6.0", {})
+    p.logger = MagicMock()
+    return p
+
+
+class TestDeviceValidation:
+    def test_partition_in_range_accepted(self):
+        p = _bare_plugin()
+        for v in ("1", "8", " 3 "):
+            assert p.validateDeviceConfigUi({"partition_number": v}, "partition", 0)[0] is True
+
+    def test_partition_out_of_range_refused(self):
+        p = _bare_plugin()
+        for v in ("0", "9", "", "abc", "1.5", None):
+            ok, _vals, errs = p.validateDeviceConfigUi({"partition_number": v}, "partition", 0)
+            assert ok is False
+            assert "1 to 8" in errs["partition_number"]
+
+    def test_zone_left_at_zero_refused(self):
+        p = _bare_plugin()
+        ok, _vals, errs = p.validateDeviceConfigUi({"zone_number": "0"}, "zone", 0)
+        assert ok is False
+        assert "1 to 250" in errs["zone_number"]
+
+    def test_zone_range(self):
+        p = _bare_plugin()
+        assert p.validateDeviceConfigUi({"zone_number": "1"}, "zone", 0)[0] is True
+        assert p.validateDeviceConfigUi({"zone_number": "250"}, "zone", 0)[0] is True
+        assert p.validateDeviceConfigUi({"zone_number": "251"}, "zone", 0)[0] is False
+        assert p.validateDeviceConfigUi({"zone_number": ""}, "zone", 0)[0] is False
+
+    def test_panel_has_nothing_to_check(self):
+        p = _bare_plugin()
+        assert p.validateDeviceConfigUi({"model": "vista20p"}, "panel", 0)[0] is True
+
+
+class TestBypassValidation:
+    def test_bypass_zone_range_in_dialog(self):
+        p = _bare_plugin()
+        assert p.validateActionConfigUi({"zone_number": "12"}, "bypass_zone", 0)[0] is True
+        for v in ("0", "251", "", "abc"):
+            ok, _vals, errs = p.validateActionConfigUi({"zone_number": v}, "bypass_zone", 0)
+            assert ok is False
+            assert "1 to 250" in errs["zone_number"]
+
+    def test_other_actions_not_checked_for_a_zone(self):
+        p = _bare_plugin()
+        assert p.validateActionConfigUi({"user_code": "1234"}, "arm_stay", 0)[0] is True
+
+    def test_saved_bad_bypass_zone_refused_without_sending(self):
+        # An action saved before the dialog checked it must log, not raise.
+        p = _bare_plugin()
+        p.test_mode = False
+        p.client = MagicMock()
+        p.client.is_connected.return_value = True
+        action = types.SimpleNamespace(props={"user_code": "1234", "zone_number": "0"})
+        dev = MagicMock()
+        dev.pluginProps = {"partition_number": "1"}
+        p.action_bypass_zone(action, dev)
+        p.client.send_keypresses.assert_not_called()
+        assert p.logger.error.called
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Banner on demand — Test connection prints it first (house rule)
+# ────────────────────────────────────────────────────────────────────────────
+
+class TestBanner:
+    def _p(self, monkeypatch):
+        p = _bare_plugin()
+        p.pluginId = plugin.PLUGIN_ID
+        p.pluginDisplayName = "HoneywellEnvisalink"
+        p.pluginVersion = "9.9.9"          # what Indigo reads from Info.plist
+        banner = MagicMock()
+        monkeypatch.setattr(plugin, "log_startup_banner", banner)
+        return p, banner
+
+    def test_test_connection_logs_banner_with_show_info_extras(self, monkeypatch):
+        p, banner = self._p(monkeypatch)
+        p.showPluginInfo()
+        info_call = banner.call_args
+        banner.reset_mock()
+        p.client = MagicMock()
+        p.client.get_stats.return_value = {"connected": False}
+        p.menu_test_connection()
+        banner.assert_called_once()
+        assert banner.call_args == info_call
+
+    def test_banner_logged_even_with_no_client(self, monkeypatch):
+        p, banner = self._p(monkeypatch)
+        p.client = None
+        p.menu_test_connection()
+        banner.assert_called_once()
+
+    def test_banner_uses_indigo_version_and_is_ascii(self, monkeypatch):
+        p, banner = self._p(monkeypatch)
+        p.showPluginInfo()
+        args, kwargs = banner.call_args
+        assert args[2] == "9.9.9"
+        for label, value in kwargs["extras"]:
+            assert (label + value).isascii()
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Toggle test mode — a real log level on both branches
+# ────────────────────────────────────────────────────────────────────────────
+
+class TestToggleTestModeLevel:
+    def test_level_is_a_real_logging_level_both_ways(self):
+        import logging
+        p = _bare_plugin()
+        p.pluginPrefs = {}
+        p.test_mode = True
+        levels = []
+        for _ in range(2):             # ON -> OFF, then OFF -> ON
+            plugin.indigo.server.log.reset_mock()
+            p.menu_toggle_test_mode()
+            levels.append(plugin.indigo.server.log.call_args.kwargs.get("level"))
+        assert levels == [logging.WARNING, logging.INFO]
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# IndigoSecrets_example.py carries every key the plugin reads, left blank
+# ────────────────────────────────────────────────────────────────────────────
+
+def test_secrets_example_covers_every_key_the_plugin_reads():
+    import ast
+    src = ast.parse((PLUGIN_SRC / "plugin.py").read_text(encoding="utf-8"))
+    wanted = {a.name for n in ast.walk(src)
+              if isinstance(n, ast.ImportFrom) and n.module == "IndigoSecrets"
+              for a in n.names}
+    assert wanted, "plugin.py no longer reads IndigoSecrets — update this test"
+    example = PLUGIN_SRC / "IndigoSecrets_example.py"
+    ns = {}
+    exec(example.read_text(encoding="utf-8"), ns)
+    for key in wanted:
+        assert key in ns, f"{key} missing from IndigoSecrets_example.py"
+        assert ns[key] == "", f"{key} must be blank in the example"
