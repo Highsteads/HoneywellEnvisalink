@@ -7,9 +7,11 @@ nav_order: 1
 
 This plugin connects a Honeywell Vista alarm panel to [Indigo](https://www.indigodomo.com) through an **Envisalink**, the small network module from EyezOn that wires into the panel's keypad connections and puts the panel on your home network. Indigo then shows what the alarm keypad shows — ready, armed, in alarm — and which doors, windows and motion sensors are open, and it can arm and disarm the panel for you.
 
-## This plugin is a beta
+## First stable release
 
-I do not have a Honeywell panel myself, so the plugin has been tested by an Indigo user on a real **Vista 20P** with an **Envisalink 4**. On that panel it reads every state correctly — ready, exit delay, armed, alarm, alarm memory and open zones — and it has armed the panel in Stay mode and disarmed it from Indigo.
+Version 1.0 follows several months of real use on a **Vista 20P** with an **Envisalink 4**. On [17 October 2026, eme jota ce confirmed](https://forums.indigodomo.com/viewtopic.php?p=233448#p233448) that it had worked without problems at home and during two trips abroad. Thank you for testing it and for the recordings that helped correct the early versions.
+
+I do not have a Honeywell panel myself. The tester confirmed reading states, door, window and motion sensors, and arming Stay and disarming from Indigo.
 
 Some things have not yet been tried on real hardware:
 
@@ -26,7 +28,7 @@ The plugin starts in **test mode**, which lets it read the panel but stops it se
 - **Bypasses a zone** when you need to leave one out.
 - **Runs your triggers** when a partition is armed, disarmed or goes into alarm — fire alarms included — and when the connection to the Envisalink drops.
 - **Keeps your codes out of the log.** Every key of a user code is masked before anything is written down, and the Envisalink password never appears in the log or in any file the plugin writes.
-- **Records what your panel sends** for a few minutes, from the plugin menu, in a file you can share on the forum to help with the beta.
+- **Records what your panel sends** for a few minutes, from the plugin menu, in a file you can share on the forum to help diagnose a problem.
 
 The plugin does not change how the panel itself works. It reads a copy of the keypad and presses keys on a virtual keypad, so your own keypads, sensors and siren carry on as before, whether or not Indigo is running.
 
@@ -42,7 +44,7 @@ The plugin does not change how the panel itself works. It reads a copy of the ke
 | Know what every setting does | [Settings](settings.md) |
 | Know what each item in the Plugins menu does | [The plugin menu](plugin-menu.md) |
 | Sort out a problem | [When something goes wrong](troubleshooting.md) |
-| Send me the details I need to improve the plugin | [Helping with the beta](helping-with-the-beta.md) |
+| Send me the details I need to improve the plugin | [Helping with diagnostics](helping-with-the-beta.md) |
 | See what changed in each version | [Version history](changelog.md) |
 
 ## Download

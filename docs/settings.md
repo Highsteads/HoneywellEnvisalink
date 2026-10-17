@@ -7,7 +7,7 @@ nav_order: 7
 
 ## The plugin's settings
 
-Open these with **Plugins → HoneywellEnvisalink (BETA) → Configure**. Clicking **Save** reconnects to the Envisalink with the new settings. If the address or the password is missing, the Event Log says so and the plugin stays disconnected.
+Open these with **Plugins → HoneywellEnvisalink → Configure**. Clicking **Save** reconnects to the Envisalink with the new settings. If the address or the password is missing, the Event Log says so and the plugin stays disconnected.
 
 | Setting | What it does |
 |---|---|
@@ -23,13 +23,13 @@ Open these with **Plugins → HoneywellEnvisalink (BETA) → Configure**. Clicki
 
 If you would rather keep the Envisalink password out of Indigo's settings, you can put it in a file called `IndigoSecrets.py` in `/Library/Application Support/Perceptive Automation/`. Several of my plugins read their passwords from this file, and this one reads one setting from it, `ENVISALINK_PASSWORD`.
 
-If you already have the file, add this line to it. If not, create a plain text file with that name in that folder, holding just this line, with your own password between the quotes. There is a blank copy, `IndigoSecrets_example.py`, inside the plugin: right-click the `HoneywellEnvisalink.indigoPlugin` you downloaded, choose **Show Package Contents**, and look in **Contents**, then **Server Plugin**. After changing the file, choose **Plugins → HoneywellEnvisalink (BETA) → Reload**.
+If you already have the file, add this line to it. If not, create a plain text file with that name in that folder, holding just this line, with your own password between the quotes. There is a blank copy, `IndigoSecrets_example.py`, inside the plugin: right-click the `HoneywellEnvisalink.indigoPlugin` you downloaded, choose **Show Package Contents**, and look in **Contents**, then **Server Plugin**. After changing the file, choose **Plugins → HoneywellEnvisalink → Reload**.
 
 ```python
 ENVISALINK_PASSWORD = "your-envisalink-password"
 ```
 
-When the file has the password, it is used, whatever the **EVL password** box says. The plugin reads the file when it starts, so after changing it choose **Plugins → HoneywellEnvisalink (BETA) → Reload**.
+When the file has the password, it is used, whatever the **EVL password** box says. The plugin reads the file when it starts, so after changing it choose **Plugins → HoneywellEnvisalink → Reload**.
 
 ## Each device's settings
 

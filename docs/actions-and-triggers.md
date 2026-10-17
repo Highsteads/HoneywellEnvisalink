@@ -23,9 +23,9 @@ Each action works on a **Honeywell Partition** device and needs a user code. Eac
 ### Setting one up
 
 1. Add an action to a trigger, schedule, action group or control page.
-2. In the action's type menu, find **HoneywellEnvisalink (BETA)** under **Device Actions**, and pick the action.
+2. In the action's type menu, find **HoneywellEnvisalink** under **Device Actions**, and pick the action.
 3. Choose the partition device.
-4. Type your code into **User code**. It must be 4 or 6 digits, and the box masks it.
+4. Type your code into **User code**. It must be 4 or 6 ordinary digits, and the box masks it. The dialog refuses anything else.
 5. For **Bypass zone**, also type the zone's number, from 1 to 250, into **Zone to bypass**. The action will not save with anything else.
 
 ### What happens when it runs
@@ -33,11 +33,13 @@ Each action works on a **Honeywell Partition** device and needs a user code. Eac
 - **Test mode on** — nothing is sent, and the Event Log says the action was suppressed. See [Safety and test mode](safety.md).
 - **Not connected** — nothing is sent, and the Event Log says the action was dropped because the Envisalink is not connected.
 - **Code missing or the wrong length** — nothing is sent, and the Event Log says the code is invalid or missing.
+- **Partition number missing or invalid** — nothing is sent. Open the partition device and set its number from 1 to 8.
+- **Command interrupted** — some keys may have arrived. Check the real keypad before trying again.
 - **Otherwise** the keys are sent. The plugin does not check that the panel armed or disarmed, so watch the partition's **Partition state** to confirm it.
 
 ## The events
 
-These run a trigger. To use one, create a new trigger, choose **HoneywellEnvisalink (BETA)** as its type, pick the event, and add whatever you want to happen.
+These run a trigger. To use one, create a new trigger, choose **HoneywellEnvisalink** as its type, pick the event, and add whatever you want to happen.
 
 | Event | When it runs |
 |---|---|

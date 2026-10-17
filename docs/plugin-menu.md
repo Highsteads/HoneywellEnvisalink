@@ -5,14 +5,14 @@ nav_order: 8
 
 # The plugin menu
 
-These are under **Plugins → HoneywellEnvisalink (BETA)**.
+These are under **Plugins → HoneywellEnvisalink**.
 
 | Menu item | What it does |
 |---|---|
 | **Test connection** | Writes the same details as **Show Plugin Info** first, so one copy of the Event Log holds everything needed for a forum post, then the connection's figures — whether it is connected, how much has been sent and received, how many times it has connected, and when it last connected and last heard from the Envisalink. If it is connected, it also asks the panel for a fresh reading of the zones. If the plugin has no connection set up, it says to check the settings. |
 | **Dump recent protocol traffic to log** | Writes the last 500 lines sent to and received from the Envisalink to the Event Log, with codes and the password masked. |
 | **Save diagnostic bundle (for sharing)** | Writes a file for me to look at if something goes wrong — see below. |
-| **Capture protocol data (for the author)...** | Records what your panel sends for a few minutes while you use your keypad, and writes a file you can share. It never arms or disarms anything. [Helping with the beta](helping-with-the-beta.md) explains how to use it. |
+| **Capture protocol data (for the author)...** | Records what your panel sends for a few minutes while you use your keypad, and writes a file you can share. It never arms or disarms anything. [Helping with diagnostics](helping-with-the-beta.md) explains how to use it. |
 | **Toggle verbose protocol logging** | Switches **Verbose protocol logging** on or off without opening the settings. It stays as you leave it. |
 | **Toggle test mode (commands suppressed / live)** | Switches test mode on or off without opening the settings, and says in the Event Log which it now is. It stays as you leave it. See [Safety and test mode](safety.md) first. |
 | **Show Plugin Info** | Writes the plugin's version, details of your Mac and Indigo, the Envisalink's address and whether test mode is on to the Event Log, which is useful to include if you ask for help on the Indigo forum. |

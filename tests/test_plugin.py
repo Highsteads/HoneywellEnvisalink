@@ -20,6 +20,9 @@ _ind = types.ModuleType("indigo")
 
 
 class _PluginBase:
+    def deviceStartComm(self, dev):
+        pass
+
     def __init__(self, *a, **k):
         pass
 
@@ -269,7 +272,7 @@ class TestDeviceValidation:
 class TestBypassValidation:
     def test_bypass_zone_range_in_dialog(self):
         p = _bare_plugin()
-        assert p.validateActionConfigUi({"zone_number": "12"}, "bypass_zone", 0)[0] is True
+        assert p.validateActionConfigUi({"zone_number": "12", "user_code": "1234"}, "bypass_zone", 0)[0] is True
         for v in ("0", "251", "", "abc"):
             ok, _vals, errs = p.validateActionConfigUi({"zone_number": v}, "bypass_zone", 0)
             assert ok is False

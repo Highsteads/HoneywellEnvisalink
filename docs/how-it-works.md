@@ -40,3 +40,5 @@ Before it sends anything, the plugin checks that test mode is off, that it is co
 ## Keeping codes and passwords private
 
 The plugin keeps the last 500 lines sent to and from the Envisalink, for the **Dump recent protocol traffic to log** and **Save diagnostic bundle** menu items. Before any line is kept or logged, each key of a user code is replaced with `*`, and the login is replaced with `<login: ****>`, so neither your codes nor the Envisalink password can reach the log or a shared file.
+
+Zone refresh and keepalive requests still run when incoming traffic is busy. A damaged zone report leaves the last reading alone, and a shorter report cannot change a zone it does not contain.

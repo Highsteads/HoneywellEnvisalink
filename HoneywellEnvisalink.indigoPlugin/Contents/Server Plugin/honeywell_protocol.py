@@ -4,9 +4,9 @@
 # Description: Pure-Python parser/encoder for the Envisalink TPI Honeywell protocol.
 #              No I/O — TCP transport lives in envisalink_client.py.
 #              Pure functions for easy testing with mock data.
-# Author:      Highsteads / CliveS & Claude Opus 4.8
-# Date:        07-07-2026
-# Version:     0.5.1-beta
+# Author:      CliveS & Codex GPT-6
+# Date:        17-10-2026
+# Version:     1.0.0
 #
 # References used to build this:
 #   - Eyez-On Envisalink TPI specification (Honeywell)
@@ -242,6 +242,7 @@ class KeypadUpdate:
 class ZoneBitmap:
     """A zone-state message (%01) — the set of zones currently open/faulted."""
     open_zones: Set[int]
+    zone_count: int = 256
 
 
 @dataclass
@@ -349,16 +350,24 @@ def parse_keypad_update(frame: RawFrame) -> Optional[KeypadUpdate]:
                         beep_code=beep, display_text=display)
 
 
+def _validate_zone_hex(payload: str) -> str:
+    """Reject damaged reports rather than interpreting missing bits as closed."""
+    data = payload.strip()
+    if not data or len(data) % 4 or not re.fullmatch(r"[0-9A-Fa-f]+", data):
+        raise ProtocolError("zone report must contain complete hexadecimal words")
+    return data
+
+
 def _decode_zone_bitmap(hexdata: str) -> Set[int]:
     """
     Decode a %01 zone bitmap into the set of open (faulted) zone numbers.
 
     The dump is a hex string processed in 4-char (16-bit) chunks; within each
     chunk the two bytes are little-endian, and the bits run low-zone-first.
-    Mirrors pyenvisalink handle_zone_state_change. NB: unverified against real
-    hardware for this plugin — the beta tester's panel had not yet streamed a
-    %01 at capture time.
+    Mirrors pyenvisalink handle_zone_state_change, verified against the
+    Vista 20P / EVL4 capture posted on 7 July 2026.
     """
+    hexdata = _validate_zone_hex(hexdata)
     open_zones: Set[int] = set()
     zone = 1
     for i in range(0, len(hexdata) - (len(hexdata) % 4), 4):
@@ -385,7 +394,7 @@ def decode_zone_timer_dump(payload: str) -> dict:
     """
     timers = {}
     zone = 1
-    hexdata = payload.strip()
+    hexdata = _validate_zone_hex(payload)
     for i in range(0, len(hexdata) - (len(hexdata) % 4), 4):
         chunk = hexdata[i:i + 4]
         try:
@@ -411,7 +420,7 @@ def open_zones_from_timer_dump(payload: str) -> Set[int]:
     exactly 3 ticks; every unused/closed zone read far higher).
     """
     open_zones: Set[int] = set()
-    hexdata = payload.strip()
+    hexdata = _validate_zone_hex(payload)
     zone = 1
     for i in range(0, len(hexdata) - (len(hexdata) % 4), 4):
         chunk = hexdata[i:i + 4]
@@ -433,7 +442,7 @@ def parse_zone_state(frame: RawFrame) -> Optional[ZoneBitmap]:
     hexdata = frame.payload.strip()
     if not hexdata:
         raise ProtocolError(f"zone state message empty: {frame.payload!r}")
-    return ZoneBitmap(open_zones=_decode_zone_bitmap(hexdata))
+    return ZoneBitmap(open_zones=_decode_zone_bitmap(hexdata), zone_count=len(hexdata) * 4)
 
 
 def parse_partition_state(frame: RawFrame) -> Optional[List[PartitionStateChange]]:
@@ -503,6 +512,10 @@ def derive_partition_state(ku: KeypadUpdate) -> PartitionState:
             return PartitionState.ARMED_INSTANT
         if "MAX" in text:                    # real panels show "MAX" or "MAXIMUM"
             return PartitionState.ARMED_MAX
+        if ku.armed_away and ku.armed_no_entry:
+            return PartitionState.ARMED_MAX
+        if ku.armed_stay and ku.armed_no_entry:
+            return PartitionState.ARMED_INSTANT
         if ku.armed_stay or "STAY" in text:
             return PartitionState.ARMED_STAY
         if ku.armed_no_entry:
@@ -526,8 +539,9 @@ def encode_command(code: str, data: str = "") -> str:
 
 def encode_login(password: str) -> str:
     """First message after the 'Login:' prompt — the bare password + CRLF."""
-    if not password:
-        raise ValueError("password is required")
+    if (not isinstance(password, str) or not password
+            or any(ord(c) < 32 or ord(c) > 126 or c in "$^" for c in password)):
+        raise ValueError("EVL password must be printable ASCII without TPI delimiters")
     return password + "\r\n"
 
 
@@ -600,4 +614,10 @@ _KEYPRESS_DIGIT = re.compile(r"(\^03,\d+,)(\d)")
 
 def redact_line_for_log(line: str) -> str:
     """Replace the digit in an outgoing partition-keypress command with '*'."""
-    return _KEYPRESS_DIGIT.sub(lambda m: m.group(1) + "*", line)
+    safe = _KEYPRESS_DIGIT.sub(lambda m: m.group(1) + "*", line)
+    if safe.startswith("%00,"):
+        parts = safe.split(",", 5)
+        if len(parts) == 6:
+            parts[5] = re.sub(r"\d{4,}", "####", parts[5])
+            safe = ",".join(parts)
+    return safe

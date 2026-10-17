@@ -5,8 +5,8 @@
         <Label>HoneywellEnvisalink — connect Honeywell Vista panels to Indigo via Envisalink modules.</Label>
     </Field>
 
-    <Field id="beta_warning" type="label" fontColor="red">
-        <Label>BETA SOFTWARE. Tested on one real panel so far, a Vista 20P with an Envisalink 4, where it reads the panel and arms and disarms it. Other Vista models and the Envisalink 3 and 5 have not been tried yet. Leave "Test mode" ON until you have checked it reads your panel correctly. Report any issues on the Indigo forum (user: CliveS).</Label>
+    <Field id="compatibility_note" type="label">
+        <Label>Stable release. A Vista 20P with an Envisalink 4 has worked through several months of use at home and abroad, reading the panel and arming and disarming it. Other Vista models and the Envisalink 3 and 5 have not been tried yet. Leave "Test mode" ON until you have checked it reads your panel correctly. Report any issues on the Indigo forum (user: CliveS).</Label>
     </Field>
 
     <Field id="sep1" type="separator"/>

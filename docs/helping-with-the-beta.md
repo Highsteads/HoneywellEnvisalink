@@ -1,15 +1,15 @@
 ---
-title: Helping with the beta
+title: Helping with diagnostics
 nav_order: 10
 ---
 
-# Helping with the beta
+# Helping with diagnostics
 
 I do not have a Honeywell panel, so the plugin was fixed and proven on real hardware using recordings of what a tester's Vista 20P sends. If you have a different Vista panel, or an Envisalink 3 or 5, a recording from yours is the most useful thing you can give me. Thank you to everyone who has already sent one.
 
 ## Recording what your panel sends
 
-**Plugins → HoneywellEnvisalink (BETA) → Capture protocol data (for the author)...** records everything your panel sends for a few minutes while you use your real keypad. It only listens. It never arms or disarms anything, and it needs no password, because the plugin is already logged in.
+**Plugins → HoneywellEnvisalink → Capture protocol data (for the author)...** records everything your panel sends for a few minutes while you use your real keypad. It only listens. It never arms or disarms anything, and it needs no password, because the plugin is already logged in.
 
 1. Make sure the plugin is connected — the panel device's **Connected** state is true.
 2. Choose the menu item, pick how long to record for — 2, 3, 5 or 8 minutes — and start it.
@@ -44,6 +44,6 @@ Post on the [Indigo forum](https://forums.indigodomo.com), or send me a message 
 
 - your panel model and your Envisalink model
 - what you did and what happened
-- the file from **Plugins → HoneywellEnvisalink (BETA) → Save diagnostic bundle (for sharing)**, which holds no password, no codes and no address
+- the file from **Plugins → HoneywellEnvisalink → Save diagnostic bundle (for sharing)**, which holds no password, no codes and no address
 
 You can also [raise an issue on GitHub](https://github.com/Highsteads/HoneywellEnvisalink/issues).

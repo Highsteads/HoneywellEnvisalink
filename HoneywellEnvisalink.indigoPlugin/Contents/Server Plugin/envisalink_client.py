@@ -5,9 +5,9 @@
 #              Handles connect, login, reconnect, line framing, and dispatching
 #              parsed frames to a callback. Debug logging mode dumps every byte
 #              in both directions (with user codes redacted).
-# Author:      Highsteads / CliveS & Claude Opus 4.8
-# Date:        07-07-2026
-# Version:     0.5.1-beta
+# Author:      CliveS & Codex GPT-6
+# Date:        17-10-2026
+# Version:     1.0.0
 
 import socket
 import threading
@@ -48,7 +48,7 @@ class EnvisalinkClient:
         )
         client.start()
         ...
-        client.send_raw("^00,11234A...\r\n")   # outgoing command
+        client.send_raw("^00,$\r\n")   # read-only keepalive
         ...
         client.stop()
     """
@@ -87,7 +87,7 @@ class EnvisalinkClient:
         self._stop_evt = threading.Event()
         self._connected = False
         self._auth_failed = False   # set on login FAILED — stops the reconnect loop
-        self._send_lock = threading.Lock()
+        self._send_lock = threading.RLock()
 
         # Diagnostics — ring buffer of last N (timestamp, direction, line) tuples
         self._debug_log = deque(maxlen=DEBUG_RING_BUFFER_SIZE)
@@ -124,6 +124,7 @@ class EnvisalinkClient:
         wait means the thread exits within ~1s in the worst case.
         """
         self._stop_evt.set()
+        self._connected = False
         sock = self._sock
         if sock:
             try:
@@ -146,7 +147,7 @@ class EnvisalinkClient:
     def is_connected(self) -> bool:
         return self._connected
 
-    def send_raw(self, line: str) -> bool:
+    def send_raw(self, line: str, expected_socket=None) -> bool:
         """
         Send a single raw TPI line to the EVL. Must already include the
         trailing \\r\\n and the checksum. Returns False if not connected.
@@ -156,12 +157,14 @@ class EnvisalinkClient:
         # self._sock to None between this guard and the sendall, which would
         # otherwise raise AttributeError on None.
         sock = self._sock
-        if not self._connected or sock is None:
+        if self._stop_evt.is_set() or not self._connected or sock is None:
             # Redact: an action send carries the user code, which must never hit the log.
             self._log("warning", f"send dropped — not connected: {redact_line_for_log(line)!r}")
             return False
         data = line.encode("ascii", errors="replace")
         with self._send_lock:
+            if self._sock is not sock or (expected_socket is not None and sock is not expected_socket):
+                return False
             try:
                 sock.sendall(data)
             except (OSError, AttributeError) as e:
@@ -179,14 +182,18 @@ class EnvisalinkClient:
         character per ^03 command). Paced with a short gap so the panel's TPI
         receiver doesn't overrun. Returns False if any send is dropped.
         """
-        ok = True
-        for i, cmd in enumerate(commands):
-            if not self.send_raw(cmd):
-                ok = False
-                break
-            if i < len(commands) - 1 and self._stop_evt.wait(KEYPRESS_GAP_S):
-                break   # stopping — abandon the rest of the sequence
-        return ok
+        # Hold the wire for the whole sequence. Never resume half a code on a
+        # replacement socket after a reconnect, and never report a partial send as OK.
+        with self._send_lock:
+            sock = self._sock
+            for i, cmd in enumerate(commands):
+                if self._stop_evt.is_set() or self._sock is not sock:
+                    return False
+                if not self.send_raw(cmd, expected_socket=sock):
+                    return False
+                if i < len(commands) - 1 and self._stop_evt.wait(KEYPRESS_GAP_S):
+                    return False
+        return True
 
     def set_debug_protocol(self, enabled: bool):
         """Toggle verbose protocol logging at runtime."""
@@ -290,10 +297,25 @@ class EnvisalinkClient:
             reconnect_delay = min(reconnect_delay * 2, MAX_RECONNECT_DELAY_S)
 
     def _connect_and_run(self):
+        # Any exception (including encoding/config/callback errors) must release
+        # the session before the reconnect loop tries again.
+        try:
+            self._receive_session()
+        finally:
+            sock = self._sock
+            self._sock = None
+            self._connected = False
+            if sock:
+                try:
+                    sock.close()
+                except OSError:
+                    pass
+
+    def _receive_session(self):
         self._log("info", f"connecting to {self.host}:{self.port}")
         sock = socket.create_connection((self.host, self.port), timeout=DEFAULT_CONNECT_TIMEOUT_S)
-        sock.settimeout(RECV_SOCKET_TIMEOUT_S)
         self._sock = sock
+        sock.settimeout(RECV_SOCKET_TIMEOUT_S)
         self.connect_count += 1
         self.last_connect_ts = time.time()
         self.last_rx_ts = time.time()  # seed so the stale-connection check has a baseline
@@ -305,27 +327,27 @@ class EnvisalinkClient:
         # connection itself is tracked separately via last_rx_ts.
         buf = b""
         login_done = False
-        last_keepalive = time.time()
-        last_zone_poll = time.time()
+        last_keepalive = time.monotonic()
+        last_zone_poll = time.monotonic()
+        last_receive = time.monotonic()
         while not self._stop_evt.is_set():
+            now = time.monotonic()
+            if now - last_receive > STALE_CONNECTION_S:
+                self._log("warning", "no traffic for 60s - reconnecting")
+                break
+            # Deadlines run even when incoming traffic never pauses for a second.
+            if login_done and now - last_keepalive >= KEEPALIVE_INTERVAL_S:
+                if not self.send_raw(encode_keepalive()):
+                    break
+                last_keepalive = now
+            if (login_done and self.zone_poll_interval_s
+                    and now - last_zone_poll >= self.zone_poll_interval_s):
+                if not self.send_raw(encode_dump_zone_timers()):
+                    break
+                last_zone_poll = now
             try:
                 chunk = sock.recv(4096)
             except socket.timeout:
-                # Short-tick wakeup — not a connection failure. Loop back to
-                # the stop-event check. Use last_rx_ts to spot a genuinely
-                # stale connection (EVL streams %00 every ~10s).
-                if time.time() - (self.last_rx_ts or 0) > STALE_CONNECTION_S:
-                    self._log("warning", "no traffic for 60s — assuming connection stale")
-                    break
-                # Periodic KeepAlive poll so the module keeps our session open.
-                if login_done and time.time() - last_keepalive > KEEPALIVE_INTERVAL_S:
-                    self.send_raw(encode_keepalive())
-                    last_keepalive = time.time()
-                # Periodic zone-timer dump so door/zone status stays fresh.
-                if (login_done and self.zone_poll_interval_s
-                        and time.time() - last_zone_poll >= self.zone_poll_interval_s):
-                    self.send_raw(encode_dump_zone_timers())
-                    last_zone_poll = time.time()
                 continue
             except OSError as e:
                 self._log("warning", f"recv error: {e}")
@@ -335,9 +357,13 @@ class EnvisalinkClient:
                 self._log("info", "connection closed by remote")
                 break
 
+            last_receive = time.monotonic()
             self.bytes_rx += len(chunk)
             self.last_rx_ts = time.time()
             buf += chunk
+            if len(buf) > 65536:
+                self._log("warning", "oversized TPI receive buffer - reconnecting")
+                break
 
             # TPI is line-delimited with CRLF
             while b"\r\n" in buf:
@@ -406,8 +432,8 @@ class EnvisalinkClient:
                 # Normal frame
                 try:
                     frame = parse_frame(text)
-                except Exception as e:
-                    self._log("warning", f"frame parse error: {e}  line={text!r}")
+                except Exception:
+                    self._log("warning", "unrecognised TPI frame ignored")
                     continue
 
                 self.frames_rx += 1

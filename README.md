@@ -2,9 +2,9 @@
 
 **Connect a Honeywell Vista alarm panel to Indigo through an Envisalink, and see and control it from Indigo.**
 
-**Version:** 0.6.0 | **Author:** CliveS & Claude | **Needs:** Indigo 2022.1 or later, and an Envisalink 3, 4 or 5
+**Version:** 1.0.0 | **Author:** CliveS & Codex | **Needs:** Indigo 2022.1 or later, and an Envisalink 3, 4 or 5
 
-**This plugin is a beta.** I do not have a Honeywell panel myself, so it has been tested by an Indigo user on a real Vista 20P with an Envisalink 4, where it reads the panel correctly and has armed and disarmed it from Indigo. It starts in a safe test mode that cannot send commands, so please read [Safety and test mode](https://highsteads.github.io/HoneywellEnvisalink/safety.html) before you turn that off on a panel that protects your home.
+**Version 1.0 is the first stable release.** [eme jota ce reported on 17 October](https://forums.indigodomo.com/viewtopic.php?p=233448#p233448) that the plugin had worked without problems at home and through two trips abroad since July, using a Vista 20P with an Envisalink 4. I do not have a Honeywell panel myself. Other panel models and actions retain the limits listed below. New installs still start in test mode, which blocks arm, disarm and bypass commands until you turn it off.
 
 **[Read the full guide](https://highsteads.github.io/HoneywellEnvisalink/)** — setting up, arming safely, what everything means, and what to do when something goes wrong.
 
@@ -20,7 +20,7 @@ This plugin lets [Indigo](https://www.indigodomo.com) talk to a Honeywell Vista 
 - **Runs your triggers** when a partition is armed, disarmed or goes into alarm — fire alarms included — and when the connection to the Envisalink drops.
 - **Starts in test mode,** which reads the panel but sends nothing, until you choose to let it send commands.
 - **Keeps your codes out of the log.** Each key of a user code is masked before anything is written down, and the Envisalink password never appears in the log or in any file the plugin writes.
-- **Records what your panel sends** for a few minutes, from the plugin menu, in a file you can share on the forum to help with the beta.
+- **Records what your panel sends** for a few minutes, from the plugin menu, in a file you can share on the forum to help diagnose a problem.
 
 ## What it works with
 
@@ -39,13 +39,19 @@ This plugin lets [Indigo](https://www.indigodomo.com) talk to a Honeywell Vista 
 
 ## Setting it up
 
-1. Create a **New Device** of type **HoneywellEnvisalink (BETA)** for each of these: one **Honeywell Panel (via Envisalink)**, one **Honeywell Partition** for each partition (number 1 in most homes), and one **Honeywell Zone** for each zone you want, with its zone number from your panel.
-2. Open **Plugins → HoneywellEnvisalink (BETA) → Configure**, type in the Envisalink's network address — the four numbers, such as `192.168.1.50`, that your router's list of devices shows — and its password, which is `user` unless someone has changed it. Leave **Test mode (SAFE)** ticked and click **Save**.
+1. Create a **New Device** of type **HoneywellEnvisalink** for each of these: one **Honeywell Panel (via Envisalink)**, one **Honeywell Partition** for each partition (number 1 in most homes), and one **Honeywell Zone** for each zone you want, with its zone number from your panel.
+2. Open **Plugins → HoneywellEnvisalink → Configure**, type in the Envisalink's network address — the four numbers, such as `192.168.1.50`, that your router's list of devices shows — and its password, which is `user` unless someone has changed it. Leave **Test mode (SAFE)** ticked and click **Save**.
 3. Walk round opening doors and use your real keypad, and check the partition and zone devices follow along. Only when you are happy, turn test mode off and try one **Arm — Stay** and **Disarm** while you stand at the keypad.
 
 The [full guide](https://highsteads.github.io/HoneywellEnvisalink/) goes through each step, explains every setting, and covers what to do if something does not work.
 
 ## What's new
+
+**v1.0.0** — The first stable release, following several months of use on a Vista 20P with an Envisalink 4.
+- Damaged zone reports keep the last reading rather than falsely closing zones.
+- Invalid saved partition numbers cannot send a command to another partition, and interrupted commands report a failure.
+- Disconnected devices show an error until fresh readings arrive, and zone refreshes keep running during busy traffic.
+- Fire alarms set both alarm indicators, Armed Max is recognised without its name on the display, and diagnostic files are private from creation.
 
 **v0.6.0** — A zone left at 0, a partition above 8 or a bypass zone outside 1 to 250 is refused when you save it, with a message saying what to type.
 - **Test connection** writes the plugin's details first, as **Show Plugin Info** does.
@@ -63,6 +69,6 @@ Every version is listed in the [version history](https://highsteads.github.io/Ho
 
 ## Authors & licence
 
-Vibed into existence by **CliveS**, who knew what he wanted, argued until he got it, and tested it on a real house. Typed at inhuman speed by **Claude** (Anthropic), who mostly did as it was told.
+Vibed into existence by **CliveS**, who knew what he wanted, argued until he got it, and tested it on a real house. Typed at inhuman speed by **Codex** (Anthropic), who mostly did as it was told.
 
 © 2026 CliveS · [MIT licence](LICENSE) — copy it, fork it, bend it, break it, fix it, ship it. If it breaks, you get to keep both pieces.

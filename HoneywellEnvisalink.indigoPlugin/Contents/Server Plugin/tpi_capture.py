@@ -5,9 +5,9 @@
 #              capturing Envisalink Honeywell TPI traffic. Used BOTH by the
 #              plugin's "Capture protocol data" menu item and by the standalone
 #              tools/capture_tpi.py, so the two can never drift.
-# Author:      Highsteads / CliveS & Claude Opus 4.8
-# Date:        07-07-2026
-# Version:     0.5.1-beta
+# Author:      CliveS & Codex GPT-6
+# Date:        17-10-2026
+# Version:     1.0.0
 
 import json
 import os
@@ -119,14 +119,15 @@ def decode_line(text):
 def build_state_timeline(records):
     """The sequence of distinct derived partition-states over time — the readable
     view of the arm/disarm progression, works with or without step markers."""
-    timeline, last = [], None
+    timeline, last = [], {}
     for r in records:
         if r.get("type") == "keypad_update":
             ds = r.get("derived_state")
-            if ds != last:
-                timeline.append({"t": r.get("t"), "state": ds,
+            partition = r.get("partition", 1)
+            if ds != last.get(partition):
+                timeline.append({"t": r.get("t"), "partition": partition, "state": ds,
                                  "display": r.get("display", ""), "beep": r.get("beep")})
-                last = ds
+                last[partition] = ds
     return timeline
 
 
@@ -177,16 +178,14 @@ def write_bundle(bundle, out_path):
     never lost. Returns the path actually written."""
     def _write(path):
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(bundle, f, indent=2, default=str)
-        try:
-            os.chmod(path, 0o600)
-        except OSError:
-            pass
         return path
     try:
         return _write(out_path)
     except OSError:
         fd, tmp = tempfile.mkstemp(prefix="honeywell_tpi_capture_", suffix=".json")
-        os.close(fd)
-        return _write(tmp)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(bundle, f, indent=2, default=str)
+        return tmp

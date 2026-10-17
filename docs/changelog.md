@@ -5,7 +5,20 @@ nav_order: 11
 
 # Version history
 
-The newest version is at the top. Every version so far is a beta.
+The newest version is at the top. Versions before 1.0.0 were beta releases.
+
+## 1.0.0 — 17 October 2026
+
+- **The first stable release.** eme jota ce confirmed several months of use on a Vista 20P with an Envisalink 4, including two trips abroad, without problems. The beta label has gone from Indigo and the guide. Test mode still starts on for new installs.
+- **A damaged report cannot close zones.** Invalid or incomplete zone words are refused, and a short report updates only the zones it contains.
+- **Actions refuse invalid saved settings.** A missing or invalid partition no longer falls back to partition 1. Codes must contain exactly four or six ordinary digits, checked both when saving and when sending.
+- **Interrupted commands report failure.** Whole sequences stay together, and a broken connection cannot send the remaining keys to a new session. Commands are never retried automatically.
+- **Disconnected readings show an error** until the device receives a fresh report. A panel created after connection shows the current connection straight away. Duplicate devices cannot steal another device's updates.
+- **Zone refreshes continue during busy traffic.** Keepalive and refresh timing no longer depend on a pause in incoming messages. Repeated manual refresh requests are limited to one every five seconds.
+- **Fire sets both alarm indicators.** Armed Max is recognised from its flags when the keypad is showing other text.
+- **Diagnostics keep code-like digits in keypad text out of the recent-traffic log.** Diagnostic and capture files are private from creation and cannot overwrite an existing file. Capture timelines identify each partition separately.
+- **Connections close after unexpected errors**, and invalid password formatting is refused before login.
+- **209 automated tests pass**, including a real TCP connection to a local alarm simulator. No new test on a physical alarm was possible here.
 
 ## 0.6.0 — 27 September 2026
 

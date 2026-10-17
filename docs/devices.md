@@ -30,7 +30,7 @@ One for each partition you use. Most homes have one.
 | **Bypass** | True when one or more zones are bypassed. |
 | **AC Power** | True while the panel has mains power. |
 | **Chime** | True when the keypad's chime is on. |
-| **ALARM** | True while the keypad shows an alarm. A fire alarm always shows in **Partition state** as ALARM, so use Partition state if you want to catch both. |
+| **ALARM** | True while the keypad shows an alarm. Fire and burglary alarms both set this to true. |
 | **LED bitmap** | The keypad's lights as a four-digit code, such as `0x1C08`. Useful only when chasing a problem. |
 | **Beep code** | What the keypad is beeping: 0 is silent, 1 to 3 is that many beeps, 4 is a continuous fast beep and 5 a continuous slow one. |
 
@@ -63,3 +63,5 @@ One for each zone you want to see — a door or window contact, a motion sensor,
 The plugin sets zones to Open or Closed only. The zone device's list of states also holds Bypassed, Trouble and Alarm, but this version never sets them, so use the partition's **Bypass** state and **Partition state** for those.
 
 Choosing **Send Status Request** on a zone asks the panel for a fresh reading of its zones, rather than waiting for the next refresh.
+
+When the connection drops, partition and zone devices keep their last reading and show **disconnected**. That error clears only after a fresh report for that device. A duplicate partition or zone number is refused and the duplicate device shows an error.

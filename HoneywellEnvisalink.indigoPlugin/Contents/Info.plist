@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>English</string>
 	<key>CFBundleDisplayName</key>
-	<string>HoneywellEnvisalink (BETA)</string>
+	<string>HoneywellEnvisalink</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.clives.indigoplugin.honeywell-envisalink</string>
 	<key>CFBundleName</key>
@@ -29,7 +29,7 @@
 		<string>Highsteads</string>
 	</dict>
 	<key>PluginVersion</key>
-	<string>0.6.0</string>
+	<string>1.0.0</string>
 	<key>ServerApiVersion</key>
 	<string>3.0</string>
 </dict>

@@ -24,11 +24,11 @@ It helps a great deal to ask your router to keep giving the Envisalink the same 
 2. Unzip the downloaded file — you will get `HoneywellEnvisalink.indigoPlugin`
 3. Double-click `HoneywellEnvisalink.indigoPlugin` — Indigo will install it automatically
 
-Indigo asks whether to enable the plugin. Say yes. It appears in the Plugins menu as **HoneywellEnvisalink (BETA)**.
+Indigo asks whether to enable the plugin. Say yes. It appears in the Plugins menu as **HoneywellEnvisalink**.
 
 ## 2. Add your devices
 
-Add the devices first, so they are ready when the plugin connects. For each one, choose **New Device** in Indigo, set **Type** to **HoneywellEnvisalink (BETA)**, pick the model, and click **Save**.
+Add the devices first, so they are ready when the plugin connects. For each one, choose **New Device** in Indigo, set **Type** to **HoneywellEnvisalink**, pick the model, and click **Save**.
 
 1. **Honeywell Panel (via Envisalink)** — add exactly one. Choose your **Panel model** and **Envisalink model**. These are for your own reference and do not change how the plugin works.
 2. **Honeywell Partition** — add one for each partition you use. Set **Partition number (1-8)**, which is 1 in most homes.
@@ -36,7 +36,7 @@ Add the devices first, so they are ready when the plugin connects. For each one,
 
 ## 3. Connect to the Envisalink
 
-Open **Plugins → HoneywellEnvisalink (BETA) → Configure**.
+Open **Plugins → HoneywellEnvisalink → Configure**.
 
 1. Type the Envisalink's network address into **Envisalink IP address or hostname**.
 2. Leave **TCP port** at 4025 unless you know your Envisalink uses another.

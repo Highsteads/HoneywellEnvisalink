@@ -22,3 +22,6 @@ CLAUDE.md
 
 # Release artifact (attach to GitHub Releases, do not commit)
 *.zip
+
+# Local Codex context
+AGENTS.md

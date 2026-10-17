@@ -13,12 +13,12 @@ An alarm panel is not a light switch. A command that goes wrong can leave a hous
 
 Leave it on until you have watched the plugin follow your panel correctly through a few days of normal use.
 
-To turn test mode off, either untick **Test mode (SAFE)** in **Plugins → HoneywellEnvisalink (BETA) → Configure** and click **Save**, or choose **Plugins → HoneywellEnvisalink (BETA) → Toggle test mode (commands suppressed / live)**. When you use the menu item to make commands live, the Event Log warns **Test mode now OFF — COMMANDS NOW LIVE, can arm/disarm panel!** The same menu item turns test mode back on, and either way the setting stays as you leave it.
+To turn test mode off, either untick **Test mode (SAFE)** in **Plugins → HoneywellEnvisalink → Configure** and click **Save**, or choose **Plugins → HoneywellEnvisalink → Toggle test mode (commands suppressed / live)**. When you use the menu item to make commands live, the Event Log warns **Test mode now OFF — COMMANDS NOW LIVE, can arm/disarm panel!** The same menu item turns test mode back on, and either way the setting stays as you leave it.
 
 ## Your user codes
 
 - **Each action holds its own code.** You type a user code into each Disarm, Arm or Bypass zone action, and the code is kept with that action in Indigo. The box masks it as you type.
-- **A code must be 4 or 6 digits.** Anything else is refused, and the Event Log says the code is invalid or missing.
+- **A code must be 4 or 6 ordinary digits.** Anything else is refused, and the Event Log says the code is invalid or missing.
 - **Codes never go anywhere else.** They are not kept in the plugin's settings or in any device state, and each key of a code is masked with `*` before any line reaches the log, the recent traffic list or a diagnostic file.
 - **I suggest giving Indigo its own user code on the panel,** so you can remove it later without changing anyone else's.
 
@@ -30,6 +30,8 @@ When you run an arm or disarm action, the plugin types your code and one more ke
 
 - **It does not check the partition is ready first.** If a door is open, the panel may not arm. Check the partition's **Ready** state, or its **Partition state**, before you rely on an arm.
 - **It does not confirm the result or try again.** Watch the partition's **Partition state**, or run a trigger on it, to confirm the panel did what you asked. The [Actions and triggers](actions-and-triggers.md) page shows how.
+- **It refuses a missing or invalid partition number.** It never substitutes partition 1 for a bad setting.
+- **It reports an interrupted sequence.** Check the real keypad before sending another action, as part of the code may already have arrived.
 - **It does not queue commands.** If the connection to the Envisalink is down, the command is dropped and the Event Log says so.
 - **A bypassed zone is not watched by the panel** while it stays bypassed. Check the keypad display after a bypass.
 
