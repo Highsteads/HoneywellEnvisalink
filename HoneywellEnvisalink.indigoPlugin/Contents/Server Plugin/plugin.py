@@ -14,6 +14,12 @@
 #         exactly 4 digits. No events from the first reading after a restart
 #         (except an alarm already in progress). Frame errors log a traceback
 #         once. Test-mode and protocol-log toggles are saved at once.
+#         Second pass: arm/disarm/bypass are confirmed against the panel (new
+#         event command_failed); Envisalink command rejections are warned;
+#         device errors are cleared explicitly; Envisalink disconnected runs
+#         once per outage (new event evl_reconnected); 3-digit bypass zones on
+#         Vista-128/250; new partition state lowBattery; zone-timer dumps are
+#         ignored while the panel is silent; shutdown marks devices disconnected.
 #   1.0.0 (17-10-2026): stable release after field use, safer command routing,
 #         zone parsing, connection lifecycle, polling and private diagnostics.
 #   0.6.0 (27-09-2026, Claude Opus 5.5): partition/zone/bypass numbers checked in
@@ -27,6 +33,7 @@ _sys.path.insert(0, _os.getcwd())
 
 import indigo
 import logging
+import functools
 import threading
 import time
 import traceback
@@ -121,6 +128,14 @@ MIN_ZONE, MAX_ZONE = 1, 250
 USER_CODE_LENGTH = 4
 MAX_FRAME_ERRORS_LOGGED = 50   # distinct (code, error type) pairs given a full traceback
 
+# After an arm/disarm/bypass, how long to wait for the panel's keypad status to
+# show the result before reporting that the command did not take effect.
+COMMAND_CONFIRM_S = 30
+
+# Panel models (Devices.xml panel "model" values) that take 3-digit zone numbers
+# when bypassing. Vista-21iP and smaller take 2 digits.
+THREE_DIGIT_ZONE_MODELS = ("vista128bp", "vista250bp")
+
 
 def _whole_number_in_range(value, low, high):
     """Return the value as an int if it is a whole number from low to high
@@ -161,6 +176,11 @@ class Plugin(indigo.PluginBase):
         self.partition_in_alarm = {}     # partition → True while in alarm (separate latch)
         self._panel_silent = False       # True while the panel has stopped sending %00
         self._frame_errors_logged = set()   # (frame code, error type) already given a traceback
+        self._devs_in_error = set()      # device ids we have put in an error state
+        self._outage_reported = False    # evl_disconnected already fired for this outage
+        self._last_reject_warn = {}      # (command code, RR) → last rejection warning time
+        self._pending_commands = {}      # partition → arm/disarm/bypass awaiting confirmation
+        self._pending_lock = threading.Lock()
         self.zone_last_change = {}       # zone → time of last %01 real-time update
         self._last_status_request = float("-inf")
         self._last_strain_warn = 0.0     # rate-limit the EVL-overload warning
@@ -201,9 +221,15 @@ class Plugin(indigo.PluginBase):
             self._capture_timer.cancel()
             self._capture_timer = None
         self._capture = None
+        self._cancel_pending_commands()
         if self.client:
             self.client.stop()
             self.client = None
+        # Leave the devices honest once the plugin has stopped watching the panel.
+        try:
+            self._mark_disconnected()
+        except Exception as e:
+            self.logger.warning(f"Could not mark devices disconnected at shutdown: {type(e).__name__}")
 
     # ── Mac sleep / wake — close TCP socket to EVL cleanly on sleep so the
     # ── board doesn't hold our previous session, then reconnect on wake.
@@ -333,10 +359,15 @@ class Plugin(indigo.PluginBase):
         if not self._valid_user_code(code):
             errs["user_code"] = "Enter your four-digit user code (digits only)."
         if typeId == "bypass_zone":
-            if _whole_number_in_range(valuesDict.get("zone_number"),
-                                      MIN_ZONE, MAX_ZONE) is None:
+            zone = _whole_number_in_range(valuesDict.get("zone_number"), MIN_ZONE, MAX_ZONE)
+            if zone is None:
                 errs["zone_number"] = (
                     f"Enter the zone to bypass, a number from {MIN_ZONE} to {MAX_ZONE}."
+                )
+            elif zone > 99 and self._bypass_zone_digits() == 2:
+                errs["zone_number"] = (
+                    "Zones above 99 exist only on the Vista 128BP and 250BP. Set the panel "
+                    "device's model to match your panel, or enter a zone from 1 to 99."
                 )
         if errs:
             return (False, valuesDict, errs)
@@ -389,13 +420,20 @@ class Plugin(indigo.PluginBase):
         connected = bool(self.client and self.client.is_connected())
         if dev.deviceTypeId == "panel":
             if self.panel_dev and self.panel_dev.id != dev.id:
-                dev.setErrorStateOnServer("duplicate panel")
+                self._set_dev_error(dev, "duplicate panel")
                 self.logger.error(f"{dev.name}: only one panel device is supported")
                 return
             self.panel_dev = dev
             dev.updateStateOnServer("connected", value=connected)
             return
         if dev.deviceTypeId == "partition":
+            # Devices created before a state was added to Devices.xml (lowBattery
+            # in 1.1.0) only get it after this call — Indigo's documented way to
+            # upgrade existing device instances, done in deviceStartComm.
+            try:
+                dev.stateListOrDisplayStateIdChanged()
+            except Exception as e:
+                self.logger.warning(f"{dev.name}: could not refresh its state list: {type(e).__name__}")
             key, routes, low, high = "partition_number", self.partition_devs, MIN_PARTITION, MAX_PARTITION
         elif dev.deviceTypeId == "zone":
             key, routes, low, high = "zone_number", self.zone_devs, MIN_ZONE, MAX_ZONE
@@ -403,19 +441,19 @@ class Plugin(indigo.PluginBase):
             return
         number = _whole_number_in_range(dev.pluginProps.get(key), low, high)
         if number is None:
-            dev.setErrorStateOnServer("invalid number")
+            self._set_dev_error(dev, "invalid number")
             self.logger.error(f"{dev.name}: set {key} from {low} to {high} in device settings")
             return
         existing = routes.get(number)
         if existing and existing.id != dev.id:
-            dev.setErrorStateOnServer("duplicate number")
+            self._set_dev_error(dev, "duplicate number")
             self.logger.error(f"{dev.name}: number {number} is already used by {existing.name}")
             return
         routes[number] = dev
         if not connected:
-            dev.setErrorStateOnServer("disconnected")
+            self._set_dev_error(dev, "disconnected")
         else:
-            dev.setErrorStateOnServer("panel silent" if self._panel_silent else "waiting for panel update")
+            self._set_dev_error(dev, "panel silent" if self._panel_silent else "waiting for panel update")
         if connected:
             self._request_zone_refresh()
 
@@ -529,6 +567,10 @@ class Plugin(indigo.PluginBase):
         if result == LoginResult.OK:
             self._last_status_request = float("-inf")
             self.logger.info("EVL login OK")
+            if self._outage_reported:
+                self._outage_reported = False
+                self.logger.info("Envisalink reconnected after an outage.")
+                self._fire_event("evl_reconnected")
             if self.panel_dev:
                 self.panel_dev.updateStateOnServer("connected", value=True)
             # Request a zone-timer dump so we know the initial state of everything
@@ -539,12 +581,31 @@ class Plugin(indigo.PluginBase):
             if self.panel_dev:
                 self.panel_dev.updateStateOnServer("connected", value=False)
 
+    def _set_dev_error(self, dev, text):
+        """Put a device in an error state and remember it, so the next good
+        reading can clear it explicitly."""
+        dev.setErrorStateOnServer(text)
+        self._devs_in_error.add(dev.id)
+
+    def _clear_dev_error(self, dev):
+        """Clear an error we set, after a fresh reading. Indigo's state update
+        clears the error by default, but explicit is certain even when the
+        new values are identical. setErrorStateOnServer(None) clears it (Indigo
+        2025.2 device base-class reference)."""
+        if dev.id not in self._devs_in_error:
+            return
+        try:
+            dev.setErrorStateOnServer(None)
+            self._devs_in_error.discard(dev.id)
+        except Exception as e:
+            self.logger.warning(f"Could not clear the error on device {dev.id}: {type(e).__name__}")
+
     def _mark_disconnected(self):
         if self.panel_dev:
             self.panel_dev.updateStateOnServer("connected", value=False)
         for dev in list(self.partition_devs.values()) + list(self.zone_devs.values()):
             try:
-                dev.setErrorStateOnServer("disconnected")
+                self._set_dev_error(dev, "disconnected")
             except Exception as e:
                 self.logger.warning(f"Could not mark device {dev.id} disconnected: {type(e).__name__}")
 
@@ -556,7 +617,7 @@ class Plugin(indigo.PluginBase):
             self._panel_silent = True
             for dev in list(self.partition_devs.values()) + list(self.zone_devs.values()):
                 try:
-                    dev.setErrorStateOnServer("panel silent")
+                    self._set_dev_error(dev, "panel silent")
                 except Exception as e:
                     self.logger.warning(f"Could not mark device {dev.id} panel silent: {type(e).__name__}")
             if first:   # already silent before a reconnect: re-mark, but no repeat alert
@@ -574,8 +635,16 @@ class Plugin(indigo.PluginBase):
         self._request_zone_refresh()
 
     def _on_disconnect(self, reason: str):
-        self.logger.warning(f"EVL disconnected: {reason}")
+        """Runs on every failed attempt while the Envisalink is unreachable. Warn and
+        fire 'evl_disconnected' once per outage, not once a minute; the client
+        still logs each retry. 'evl_reconnected' marks the end of the outage."""
         self._mark_disconnected()
+        if self._outage_reported:
+            if self.debug:
+                self.logger.debug(f"EVL still disconnected: {reason}")
+            return
+        self._outage_reported = True
+        self.logger.warning(f"EVL disconnected: {reason}")
         self._fire_event("evl_disconnected")
 
     def _on_frame(self, frame):
@@ -633,16 +702,21 @@ class Plugin(indigo.PluginBase):
             {"key": "chime",         "value": ku.chime},
             {"key": "alarm",         "value": ku.alarm or ku.fire},
             {"key": "state",         "value": derived.value},
+            {"key": "lowBattery",    "value": ku.low_battery},
             {"key": "ledBitmap",     "value": f"0x{ku.led_bitmap:04X}"},
             {"key": "beepCode",      "value": ku.beep_code},
         ])
+        self._clear_dev_error(dev)
         self._emit_keypad_events(ku, derived)
+        self._check_pending_command(ku)
 
     def _set_zone(self, dev, is_open):
         dev.updateStatesOnServer([
             {"key": "onOffState", "value": is_open},
             {"key": "zoneState", "value": "open" if is_open else "closed"},
         ])
+        if not self._panel_silent:
+            self._clear_dev_error(dev)
 
     def _handle_zone_bitmap(self, zb: ZoneBitmap):
         # A %01 message is a real-time bitmap of ALL open zones — authoritative.
@@ -661,6 +735,10 @@ class Plugin(indigo.PluginBase):
         # closed without a push. %01 always wins for a just-changed zone (the dump
         # can be up to one poll-interval stale), so we skip any zone updated within
         # the poll window.
+        if self._panel_silent:
+            # The Envisalink answers a dump request from its own timers, so while
+            # the panel is silent a dump would read every zone as long-closed.
+            return
         open_zones = open_zones_from_timer_dump(frame.payload)
         now = time.time()
         window = max(self.zone_poll_seconds, MIN_ZONE_POLL_S)
@@ -688,9 +766,18 @@ class Plugin(indigo.PluginBase):
                 f"much traffic. If this keeps happening, increase 'Zone status refresh "
                 f"(seconds)' (now {self.zone_poll_seconds}s) in the plugin config, or set it "
                 f"to 0 to disable polling.")
-        elif rr not in ("00", "") and self.debug:
-            self.logger.debug(f"command response {frame.code},{rr} "
-                              f"({TPI_RESPONSE_CODES.get(rr, 'unknown')})")
+        elif rr not in ("00", ""):
+            # Unknown command / syntax error etc. For a keypress (^03) this means
+            # an arm, disarm or bypass key was refused. Warn, at most once per
+            # (command, code) every two minutes, so one bad sequence is one line.
+            now = time.time()
+            key = (frame.code, rr)
+            if now - self._last_reject_warn.get(key, 0.0) >= STRAIN_WARN_INTERVAL_S:
+                self._last_reject_warn[key] = now
+                meaning = TPI_RESPONSE_CODES.get(rr, f"code {rr}")
+                hint = (" A key of an arm, disarm or bypass command was refused — check the real keypad."
+                        if frame.code == "^03" else "")
+                self.logger.warning(f"Envisalink rejected command {frame.code}: '{meaning}' ({rr}).{hint}")
 
     def _handle_partition_state(self, changes):
         # A %02 message carries the status of every partition at once.
@@ -704,6 +791,8 @@ class Plugin(indigo.PluginBase):
             if not dev:
                 continue
             dev.updateStateOnServer("state", value=psc.state.value)
+            if not self._panel_silent:
+                self._clear_dev_error(dev)
             self._emit_partition_events(psc.partition, psc.state)
 
     def _handle_cid_event(self, cid: RealtimeCIDEvent):
@@ -833,10 +922,80 @@ class Plugin(indigo.PluginBase):
             return False
         client = self.client
         commands = encoder(code, partition) if zone is None else encoder(code, zone, partition)
+        # Expect the result BEFORE sending, so a fast keypad update can't slip past.
+        token = self._expect_command(partition, label)
         if not client.send_keypresses(commands):
+            self._cancel_pending_command(partition, token)
             self.logger.error(f"{label}: command was interrupted. Check the real keypad before trying again.")
             return False
         return True
+
+    # What each command should make the panel's keypad status show, in plain
+    # words for the log. Checked on the armed flags, the same signal the
+    # armed/disarmed events use; bypass on the keypad's bypass light.
+    _COMMAND_EXPECTATIONS = {
+        "disarm":      (lambda ku: not ku.armed, "disarmed"),
+        "arm_away":    (lambda ku: ku.armed,     "armed"),
+        "arm_stay":    (lambda ku: ku.armed,     "armed"),
+        "arm_instant": (lambda ku: ku.armed,     "armed"),
+        "arm_max":     (lambda ku: ku.armed,     "armed"),
+        "bypass_zone": (lambda ku: ku.bypass,    "showing a bypassed zone"),
+    }
+
+    def _expect_command(self, partition, label):
+        """Start the confirmation watch for a command about to be sent. A newer
+        command on the same partition replaces an older one still waiting."""
+        check, outcome = self._COMMAND_EXPECTATIONS[label]
+        token = object()
+        timer = threading.Timer(COMMAND_CONFIRM_S, self._command_timed_out, args=(partition, token))
+        timer.daemon = True
+        with self._pending_lock:
+            old = self._pending_commands.pop(partition, None)
+            self._pending_commands[partition] = {"label": label, "check": check, "outcome": outcome,
+                                                 "token": token, "timer": timer}
+        if old:
+            old["timer"].cancel()
+        timer.start()
+        return token
+
+    def _cancel_pending_command(self, partition, token):
+        with self._pending_lock:
+            pend = self._pending_commands.get(partition)
+            if not pend or pend["token"] is not token:
+                return
+            self._pending_commands.pop(partition, None)
+        pend["timer"].cancel()
+
+    def _cancel_pending_commands(self):
+        with self._pending_lock:
+            pending = list(self._pending_commands.values())
+            self._pending_commands.clear()
+        for pend in pending:
+            pend["timer"].cancel()
+
+    def _check_pending_command(self, ku):
+        """Called for every keypad update: confirm a waiting command once the
+        panel shows its result."""
+        with self._pending_lock:
+            pend = self._pending_commands.get(ku.partition)
+            if not pend or not pend["check"](ku):
+                return
+            self._pending_commands.pop(ku.partition, None)
+        pend["timer"].cancel()
+        self.logger.info(f"{pend['label']}: confirmed by the panel — partition {ku.partition} "
+                         f"is now {pend['outcome']}.")
+
+    def _command_timed_out(self, partition, token):
+        with self._pending_lock:
+            pend = self._pending_commands.get(partition)
+            if not pend or pend["token"] is not token:
+                return
+            self._pending_commands.pop(partition, None)
+        self.logger.error(
+            f"{pend['label']}: the panel did not confirm it within {COMMAND_CONFIRM_S}s — partition "
+            f"{partition} is not {pend['outcome']}. Check the real keypad: a wrong code, an open zone "
+            "or a missed key can all cause this.")
+        self._fire_event("command_failed")
 
     def action_disarm(self, action, dev):
         return self._send_action(action, dev, "disarm", encode_disarm)
@@ -853,12 +1012,26 @@ class Plugin(indigo.PluginBase):
     def action_arm_max(self, action, dev):
         return self._send_action(action, dev, "arm_max", encode_arm_max)
 
+    def _bypass_zone_digits(self):
+        """2 for Vista-21iP and smaller, 3 for the Vista-128/250 families, from the
+        panel device's model. No panel device, or 'Other Vista': 2."""
+        model = ""
+        if self.panel_dev:
+            model = (self.panel_dev.pluginProps.get("model") or "").strip().lower()
+        return 3 if model in THREE_DIGIT_ZONE_MODELS else 2
+
     def action_bypass_zone(self, action, dev):
         zone = _whole_number_in_range((action.props or {}).get("zone_number"), MIN_ZONE, MAX_ZONE)
         if zone is None:
             self.logger.error(f"bypass_zone: zone number must be from {MIN_ZONE} to {MAX_ZONE}")
             return False
-        return self._send_action(action, dev, "bypass_zone", encode_bypass_zone, zone)
+        digits = self._bypass_zone_digits()
+        if digits == 2 and zone > 99:
+            self.logger.error(f"bypass_zone: zone {zone} needs a 3-digit panel. Set the panel "
+                              "device's model to Vista 128BP or 250BP if that is what you have.")
+            return False
+        encoder = functools.partial(encode_bypass_zone, zone_digits=digits)
+        return self._send_action(action, dev, "bypass_zone", encoder, zone)
 
     # ── Sensor action (zone devices are type="sensor") ─────────────────────
 
@@ -947,7 +1120,7 @@ class Plugin(indigo.PluginBase):
         stats = self.client.get_stats()
         stats["host"] = "<redacted>"     # keep the local EVL IP out of a shared file
         bundle = {
-            "plugin_version": PLUGIN_VERSION,
+            "plugin_version": self.pluginVersion,   # from Info.plist via Indigo
             "plugin_id": PLUGIN_ID,
             "host": "<redacted>",        # matches the capture path — no local topology in a shared file
             "port": self.port,

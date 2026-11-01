@@ -16,7 +16,7 @@ Each action works on a **Honeywell Partition** device and needs a user code. Eac
 | **Arm — Stay** | your code, then 3 | Arms with people at home. |
 | **Arm — Instant** | your code, then 7 | Arms in Stay mode with no entry delay. |
 | **Arm — Max** | your code, then 4 | Arms in Away mode with no entry delay. |
-| **Bypass zone** | your code, then 6, then the zone number | Leaves one zone out, so the panel ignores it while it stays bypassed. Zone numbers below 10 go as two digits, so zone 5 is sent as 05. |
+| **Bypass zone** | your code, then 6, then the zone number | Leaves one zone out, so the panel ignores it while it stays bypassed. On a Vista 21iP or smaller panel the zone goes as two digits, so zone 5 is sent as 05. On a Vista 128BP or 250BP it goes as three, 005. The plugin goes by the **Panel model** on your panel device, so set that to match. |
 
 **Disarm** and **Arm — Stay** have been tested on a real panel. The others press keys in the same way but have not yet been sent to one, so try each first while you are at home.
 
@@ -35,7 +35,10 @@ Each action works on a **Honeywell Partition** device and needs a user code. Eac
 - **Code missing or the wrong length** — nothing is sent, and the Event Log says the code is invalid or missing.
 - **Partition number missing or invalid** — nothing is sent. Open the partition device and set its number from 1 to 8.
 - **Command interrupted** — some keys may have arrived. Check the real keypad before trying again.
-- **Otherwise** the keys are sent. The plugin does not check that the panel armed or disarmed, so watch the partition's **Partition state** to confirm it.
+- **Otherwise** the keys are sent, and the plugin watches the panel for up to 30 seconds:
+  - When the partition shows armed, disarmed or bypassed, as you asked, the Event Log says the panel confirmed it.
+  - If it does not, the Event Log gives an error and the **Arm, disarm or bypass not confirmed** event runs. A wrong code, an open zone or a missed key can all cause this. Check the real keypad.
+  - If the Envisalink refuses a key, the Event Log warns at once.
 
 ## The events
 
@@ -49,7 +52,9 @@ These run a trigger. To use one, create a new trigger, choose **HoneywellEnvisal
 | **Partition armed (instant)** | A partition is armed in Instant mode. |
 | **Partition armed (max)** | A partition is armed in Max mode. |
 | **Partition disarmed** | A partition stops being armed, even if a door or window was left open, after an alarm, or with a trouble showing. |
-| **Envisalink disconnected** | The connection to the Envisalink drops, or an attempt to reconnect fails. |
+| **Envisalink disconnected** | The connection to the Envisalink drops, or the plugin cannot reach it. It runs once for each outage. |
+| **Envisalink reconnected** | The plugin gets through again after **Envisalink disconnected**. |
+| **Arm, disarm or bypass not confirmed** | An arm, disarm or bypass action was sent, but the panel did not show the result within 30 seconds. |
 | **Panel stopped sending status** | The Envisalink is connected, but no keypad status has come from the panel for 60 seconds. The panel, or the wiring between it and the Envisalink, may be offline. It runs once until status returns. A good one to send you a notification. |
 | **Panel status resumed** | Keypad status is coming from the panel again after **Panel stopped sending status**. |
 
@@ -59,7 +64,7 @@ Before you rely on them:
 - **Each event runs once per change.** The same state reported again does not run the trigger again.
 - **When the plugin starts,** the first reading from each partition is noted quietly and runs no armed or disarmed event. The exception is an alarm: if a partition is already in alarm, **Alarm triggered** runs.
 - **The armed events can run at the start of the exit delay.** On the tester's panel, the panel reports the armed state as soon as arming begins, so an armed event runs then rather than when the countdown ends.
-- **Envisalink disconnected runs on every failed attempt** while the Envisalink cannot be reached — after 5, 10, 20 and 40 seconds and then every minute. If it sends you a notification, expect one for each attempt.
+- **Envisalink disconnected runs once per outage.** The plugin keeps retrying — after 5, 10, 20 and 40 seconds and then every minute — but the event does not run again until **Envisalink reconnected** has run.
 
 ## Triggers on a device's state
 

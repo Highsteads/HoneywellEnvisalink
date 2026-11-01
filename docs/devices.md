@@ -9,11 +9,11 @@ The plugin gives you three kinds of device. This page explains what each one sho
 
 ## Honeywell Panel (via Envisalink)
 
-One of these stands for your panel and its Envisalink. You need exactly one.
+One of these stands for your panel and its Envisalink. You need exactly one. Set its **Panel model** to match your panel: a Vista 128BP or 250BP takes 3-digit zone numbers when bypassing, and smaller panels take 2.
 
 | Shown as | What it means |
 |---|---|
-| **Connected** | True while the plugin is logged in to the Envisalink, false when the connection is down or the login failed. This is what the device list shows. |
+| **Connected** | True while the plugin is logged in to the Envisalink, false when the connection is down, the login failed or the plugin has stopped. This is what the device list shows. |
 | **Last CID event** | The last alarm report the panel made, in the Contact ID code panels use to report to a monitoring centre, written like `1130/P1/5`. The first digit is 1 for a new event or 3 for one that has cleared, the next three are the event code (130 is a burglary alarm), then comes the partition, then the zone or user number. Each report also appears in the Event Log. |
 
 ## Honeywell Partition
@@ -30,6 +30,7 @@ One for each partition you use. Most homes have one.
 | **Bypass** | True when one or more zones are bypassed. |
 | **AC Power** | True while the panel has mains power. |
 | **Chime** | True when the keypad's chime is on. |
+| **Low battery** | True when the keypad shows the panel's low-battery light. |
 | **ALARM** | True while the keypad shows an alarm. Fire and burglary alarms both set this to true. |
 | **LED bitmap** | The keypad's lights as a four-digit code, such as `0x1C08`. Useful only when chasing a problem. |
 | **Beep code** | What the keypad is beeping: 0 is silent, 1 to 3 is that many beeps, 4 is a continuous fast beep and 5 a continuous slow one. |

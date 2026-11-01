@@ -9,4 +9,6 @@
     <Event id="evl_disconnected"><Name>Envisalink disconnected</Name></Event>
     <Event id="panel_silent"><Name>Panel stopped sending status</Name></Event>
     <Event id="panel_restored"><Name>Panel status resumed</Name></Event>
+    <Event id="evl_reconnected"><Name>Envisalink reconnected</Name></Event>
+    <Event id="command_failed"><Name>Arm, disarm or bypass not confirmed</Name></Event>
 </Events>

@@ -89,6 +89,7 @@
             <State id="bypass">   <ValueType>Boolean</ValueType><TriggerLabel>Bypass</TriggerLabel><ControlPageLabel>Bypass</ControlPageLabel></State>
             <State id="acPower"> <ValueType>Boolean</ValueType><TriggerLabel>AC Power</TriggerLabel><ControlPageLabel>AC Power</ControlPageLabel></State>
             <State id="chime">    <ValueType>Boolean</ValueType><TriggerLabel>Chime</TriggerLabel><ControlPageLabel>Chime</ControlPageLabel></State>
+            <State id="lowBattery"><ValueType>Boolean</ValueType><TriggerLabel>Panel low battery</TriggerLabel><ControlPageLabel>Low battery</ControlPageLabel></State>
             <State id="alarm">    <ValueType>Boolean</ValueType><TriggerLabel>ALARM</TriggerLabel><ControlPageLabel>ALARM</ControlPageLabel></State>
             <State id="ledBitmap"><ValueType>String</ValueType><TriggerLabel>LED bitmap</TriggerLabel><ControlPageLabel>LEDs</ControlPageLabel></State>
             <State id="beepCode"><ValueType>Integer</ValueType><TriggerLabel>Beep code</TriggerLabel><ControlPageLabel>Beep</ControlPageLabel></State>

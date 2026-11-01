@@ -53,6 +53,10 @@ The [full guide](https://highsteads.github.io/HoneywellEnvisalink/) goes through
 - After the Mac wakes, the plugin always reconnects.
 - User codes must be exactly 4 digits. A longer code could press extra keys, such as TEST.
 - Restarting the plugin no longer runs the armed or disarmed events. An alarm already in progress still runs **Alarm triggered**.
+- Arm, disarm and bypass are checked against the panel. The new **Arm, disarm or bypass not confirmed** event runs if the panel does not show the result within 30 seconds.
+- A zone with ENTRY in its name no longer shows as Entry Delay. Bypass sends 3-digit zones on a Vista 128BP or 250BP.
+- **Envisalink disconnected** runs once per outage, and the new **Envisalink reconnected** event runs when the plugin gets through again.
+- A new **Low battery** partition state.
 
 **v1.0.0** — The first stable release, following several months of use on a Vista 20P with an Envisalink 4.
 - Damaged zone reports keep the last reading rather than falsely closing zones.
