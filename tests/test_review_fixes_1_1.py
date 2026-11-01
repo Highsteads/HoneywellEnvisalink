@@ -357,3 +357,199 @@ class TestLatchSurvivesSleep:
         p.deviceStartComm(dev)
         _feed(p, READY)
         assert fired == ["armed_away", "disarmed"]
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Second pass — the remaining review items
+# ════════════════════════════════════════════════════════════════════════════
+
+def _connected_plugin():
+    p, fired = _plugin_with_partition()
+    p.test_mode = False
+    p.client = MagicMock()
+    p.client.is_connected.return_value = True
+    p.client.send_keypresses.return_value = True
+    return p, fired
+
+
+PARTITION_1 = types.SimpleNamespace(pluginProps={"partition_number": "1"})
+
+
+class TestEntryDelayNeedsArmedPrompt:
+    def test_disarmed_zone_named_entry_is_not_entry_delay(self):
+        ku = hp.parse_keypad_update(hp.parse_frame("%00,01,0008,05,00,FAULT 05 FRONT ENTRY DOOR       $"))
+        assert hp.derive_partition_state(ku) == hp.PartitionState.NOT_READY
+
+    @pytest.mark.parametrize("text", ["DISARM SYSTEM ORALARM WILL OCCUR",   # two lines run together
+                                      "DISARM SYSTEM   OR ALARM OCCURS ",   # padded variant
+                                      "DISARM SYSTEM OR ALARM WILL OCCUR"])
+    def test_armed_with_prompt_is_entry_delay(self, text):
+        ku = hp.parse_keypad_update(hp.parse_frame(f"%00,01,0C0C,08,00,{text}$"))
+        assert hp.derive_partition_state(ku) == hp.PartitionState.ENTRY_DELAY
+
+    def test_prompt_while_disarmed_is_not_entry_delay(self):
+        ku = hp.parse_keypad_update(hp.parse_frame("%00,01,0008,08,00,DISARM SYSTEM OR ALARM WILL OCCUR$"))
+        assert hp.derive_partition_state(ku) != hp.PartitionState.ENTRY_DELAY
+
+
+class TestBypassZoneDigits:
+    def test_three_digit_encoding(self):
+        keys = "".join(c.split(",")[2][0] for c in hp.encode_bypass_zone("1234", 5, 1, zone_digits=3))
+        assert keys == "12346005"
+
+    def test_two_digit_panel_refuses_zone_above_99(self):
+        with pytest.raises(ValueError):
+            hp.encode_bypass_zone("1234", 120, 1, zone_digits=2)
+
+    @pytest.mark.parametrize("model,expected", [("vista128bp", "12346005"), ("vista250bp", "12346005"),
+                                                ("vista20p", "1234605"), ("other", "1234605"), (None, "1234605")])
+    def test_plugin_picks_digits_from_panel_model(self, model, expected):
+        p, _fired = _connected_plugin()
+        p.panel_dev = None if model is None else types.SimpleNamespace(pluginProps={"model": model})
+        assert p.action_bypass_zone(types.SimpleNamespace(props={"user_code": "1234", "zone_number": "5"}),
+                                    PARTITION_1) is True
+        sent = p.client.send_keypresses.call_args[0][0]
+        assert "".join(c.split(",")[2][0] for c in sent) == expected
+        p._cancel_pending_commands()
+
+    def test_zone_above_99_refused_on_two_digit_panel(self):
+        p, _fired = _connected_plugin()
+        p.panel_dev = types.SimpleNamespace(pluginProps={"model": "vista20p"})
+        assert p.action_bypass_zone(types.SimpleNamespace(props={"user_code": "1234", "zone_number": "120"}),
+                                    PARTITION_1) is False
+        p.client.send_keypresses.assert_not_called()
+        ok, _v, errs = p.validateActionConfigUi({"user_code": "1234", "zone_number": "120"}, "bypass_zone", 0)
+        assert ok is False and "128BP" in errs["zone_number"]
+
+
+class TestCommandConfirmation:
+    def test_arm_confirmed_by_panel(self, monkeypatch):
+        monkeypatch.setattr(plugin, "COMMAND_CONFIRM_S", 0.3)
+        p, fired = _connected_plugin()
+        _feed(p, READY)
+        assert p.action_arm_away(types.SimpleNamespace(props={"user_code": "1234"}), PARTITION_1)
+        _feed(p, ARMED_AWAY)
+        time.sleep(0.5)
+        assert "command_failed" not in fired
+        assert any("confirmed by the panel" in str(c) for c in p.logger.info.call_args_list)
+
+    def test_arm_not_confirmed_reports_failure(self, monkeypatch):
+        monkeypatch.setattr(plugin, "COMMAND_CONFIRM_S", 0.2)
+        p, fired = _connected_plugin()
+        _feed(p, READY)
+        p.action_arm_away(types.SimpleNamespace(props={"user_code": "1234"}), PARTITION_1)
+        _feed(p, READY)                     # panel still disarmed (e.g. a zone open)
+        time.sleep(0.5)
+        assert fired == ["command_failed"]
+        assert any("did not confirm" in str(c) for c in p.logger.error.call_args_list)
+
+    def test_disarm_confirmed_after_alarm(self, monkeypatch):
+        monkeypatch.setattr(plugin, "COMMAND_CONFIRM_S", 0.3)
+        p, fired = _connected_plugin()
+        _feed(p, READY, ARMED_AWAY, IN_ALARM)
+        p.action_disarm(types.SimpleNamespace(props={"user_code": "1234"}), PARTITION_1)
+        _feed(p, ALARM_MEMORY)
+        time.sleep(0.5)
+        assert "command_failed" not in fired and "disarmed" in fired
+
+    def test_interrupted_send_cancels_the_watch(self, monkeypatch):
+        monkeypatch.setattr(plugin, "COMMAND_CONFIRM_S", 0.2)
+        p, fired = _connected_plugin()
+        p.client.send_keypresses.return_value = False
+        assert p.action_arm_stay(types.SimpleNamespace(props={"user_code": "1234"}), PARTITION_1) is False
+        time.sleep(0.4)
+        assert "command_failed" not in fired and p._pending_commands == {}
+
+    def test_code_never_logged(self, monkeypatch):
+        monkeypatch.setattr(plugin, "COMMAND_CONFIRM_S", 0.2)
+        p, _fired = _connected_plugin()
+        p.action_disarm(types.SimpleNamespace(props={"user_code": "4471"}), PARTITION_1)
+        time.sleep(0.4)
+        logged = " ".join(str(c) for m in (p.logger.info, p.logger.error, p.logger.warning)
+                          for c in m.call_args_list)
+        assert "4471" not in logged
+
+    def test_rejected_keypress_warns_once(self):
+        p, _fired = _connected_plugin()
+        for _ in range(5):
+            p._handle_command_response(types.SimpleNamespace(code="^03", payload="03"))
+        assert p.logger.warning.call_count == 1
+        assert "refused" in p.logger.warning.call_args[0][0]
+
+
+class TestErrorStatesCleared:
+    def _routed(self, p, dev_id=101):
+        p.pluginId = "com.clives.indigoplugin.honeywell-envisalink"
+        dev = MagicMock()
+        dev.id, dev.deviceTypeId, dev.pluginId, dev.name = dev_id, "partition", p.pluginId, "Partition 1"
+        dev.pluginProps = {"partition_number": "1"}
+        p.partition_devs = {}
+        p.deviceStartComm(dev)
+        return dev
+
+    def test_fresh_reading_clears_error_explicitly(self):
+        p, _fired = _connected_plugin()
+        dev = self._routed(p)
+        dev.setErrorStateOnServer.assert_called_with("waiting for panel update")
+        _feed(p, READY)
+        dev.setErrorStateOnServer.assert_called_with(None)
+        dev.setErrorStateOnServer.reset_mock()
+        _feed(p, READY)                     # not in error any more — no repeat clear
+        dev.setErrorStateOnServer.assert_not_called()
+
+    def test_state_list_refreshed_for_new_states(self):
+        p, _fired = _connected_plugin()
+        dev = self._routed(p)
+        dev.stateListOrDisplayStateIdChanged.assert_called_once_with()
+
+    def test_low_battery_state_is_updated(self):
+        p, _fired = _connected_plugin()
+        _feed(p, "%00,01,4008,08,00,LO BAT                          $")
+        states = p.partition_devs[1].updateStatesOnServer.call_args[0][0]
+        assert {"key": "lowBattery", "value": True} in states
+
+    def test_zone_dump_ignored_while_panel_silent(self):
+        p, _fired = _connected_plugin()
+        zone = MagicMock()
+        p.zone_devs = {1: zone}
+        p._on_panel_silent(True)
+        _feed(p, "%FF,0000$")
+        zone.updateStatesOnServer.assert_not_called()
+
+
+class TestOutageEvents:
+    def test_disconnected_once_per_outage_then_reconnected(self):
+        p, fired = _plugin_with_partition()
+        for _ in range(4):
+            p._on_disconnect("loop_exited")
+        p._on_login(hp.LoginResult.OK)
+        p._on_disconnect("loop_exited")
+        assert fired == ["evl_disconnected", "evl_reconnected", "evl_disconnected"]
+        assert p.logger.warning.call_count == 2
+
+    def test_normal_login_does_not_fire_reconnected(self):
+        p, fired = _plugin_with_partition()
+        p._on_login(hp.LoginResult.OK)
+        assert fired == []
+
+    def test_shutdown_marks_devices_disconnected(self):
+        p, _fired = _plugin_with_partition()
+        p.panel_dev = MagicMock()
+        p.shutdown()
+        p.panel_dev.updateStateOnServer.assert_called_with("connected", value=False)
+        p.partition_devs[1].setErrorStateOnServer.assert_called_with("disconnected")
+
+
+class TestDeclarations:
+    def test_new_events_and_state_declared(self):
+        import xml.etree.ElementTree as ET
+        base = plugin._os.path.dirname(plugin.__file__)
+        events = {e.get("id") for e in ET.parse(f"{base}/Events.xml").getroot()}
+        assert {"evl_reconnected", "command_failed"} <= events
+        states = {s.get("id") for s in ET.parse(f"{base}/Devices.xml").getroot().iter("State")}
+        assert "lowBattery" in states
+
+    def test_unused_names_removed(self):
+        for name in ("ZoneState", "VISTA_MODELS", "TPI_POLL_RESPONSE"):
+            assert not hasattr(hp, name)
+        assert not hasattr(hp.LoginResult, "DISCONNECTED")

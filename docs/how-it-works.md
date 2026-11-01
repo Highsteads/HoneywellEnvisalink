@@ -19,7 +19,7 @@ The Envisalink answers those messages itself, even if the panel behind it has go
 
 ## When the connection drops
 
-If the plugin cannot reach the Envisalink, or the connection drops, it waits 5 seconds and tries again, then 10, 20 and 40 seconds, and then every 60 seconds until it gets through. Each time, the panel device shows **Connected** as false, the Event Log has a warning, and the **Envisalink disconnected** event runs.
+If the plugin cannot reach the Envisalink, or the connection drops, it waits 5 seconds and tries again, then 10, 20 and 40 seconds, and then every 60 seconds until it gets through. The panel device shows **Connected** as false and the devices show **disconnected**. The Event Log warns and the **Envisalink disconnected** event runs, once per outage rather than on every retry. When the plugin gets through again, **Envisalink reconnected** runs.
 
 If the Envisalink refuses the password, the plugin stops trying, because the same password will fail every time. The Event Log says so, and the plugin waits for you to correct the password, as the [When something goes wrong](troubleshooting.md) page explains.
 
@@ -38,6 +38,13 @@ It is one small request each time, and the plugin watches the Envisalink's repli
 A Honeywell panel is armed and disarmed by pressing keys. When you run an arm or disarm action, the plugin presses your user code and then one more key on the partition's virtual keypad, a key at a time with a short pause between each, exactly as you would at a real keypad. The [Actions and triggers](actions-and-triggers.md) page lists which key each action presses.
 
 Before it sends anything, the plugin checks that test mode is off, that it is connected, and that the code is exactly 4 digits. If any of these fails, nothing is sent and the Event Log says why.
+
+After sending, it watches the partition's keypad status for up to 30 seconds:
+- An arm should turn the armed lights on, a disarm should turn them off, and a bypass should light the bypass light.
+- If that happens, the Event Log says so.
+- If it doesn't, the Event Log gives an error and the **Arm, disarm or bypass not confirmed** event runs.
+
+While the panel is silent, zone-timer readings are ignored. The Envisalink answers those requests from its own timers, which would show every zone as closed.
 
 ## Keeping codes and passwords private
 

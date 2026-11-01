@@ -19,6 +19,18 @@ These come from a code review of 1.0. They were tested against a simulated Envis
 - **A second alarm is never swallowed.** Alarms are tracked apart from arming, so a fire alarm while disarmed can run **Alarm triggered** again the next time.
 - **Errors are easier to report.** If a message from the panel cannot be handled, the Event Log shows the full error once, instead of only its type every few seconds.
 - **Turning test mode or protocol logging on or off is saved straight away**, so a crash cannot bring back the old setting.
+- **Arm, disarm and bypass are confirmed.**
+  - For 30 seconds after an action, the plugin watches the partition's keypad status. An arm should turn the armed lights on, a disarm should turn them off, and a bypass should light the bypass light.
+  - The Event Log says when the panel confirmed it.
+  - If the panel does not, the log gives an error and the new **Arm, disarm or bypass not confirmed** event runs.
+  - A key the Envisalink refuses gets a warning at once. Before, refused keys appeared only with debug logging.
+- **A zone with ENTRY in its name no longer shows as Entry Delay.** "FAULT 05 FRONT ENTRY DOOR" on a disarmed panel used to read as an entry delay. Entry delay now needs the partition armed and the panel's own "DISARM SYSTEM" prompt.
+- **Bypass on a Vista 128BP or 250BP sends 3-digit zones**, such as 005, as those panels expect. The plugin goes by the **Panel model** on the panel device. Zones above 99 are refused on smaller panels.
+- **Envisalink disconnected runs once per outage**, not on every retry, and the new **Envisalink reconnected** event runs when the plugin gets through again.
+- **Errors clear reliably.** After a fresh reading, the plugin clears a device's error itself, even when nothing changed. Stopping the plugin marks the devices disconnected.
+- **A silent panel cannot fake closed zones.** Zone-timer readings are ignored while the panel is silent, because the Envisalink answers them from its own timers.
+- **A Low battery state** on each partition shows the panel's low-battery light. Existing partition devices pick it up when the plugin starts.
+- **Tidier code.** Unused names were removed, and the diagnostic file takes its version from the plugin itself.
 
 ## 1.0.0 — 17 October 2026
 

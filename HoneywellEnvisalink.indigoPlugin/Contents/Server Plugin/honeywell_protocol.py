@@ -5,8 +5,13 @@
 #              No I/O — TCP transport lives in envisalink_client.py.
 #              Pure functions for easy testing with mock data.
 # Author:      CliveS & Codex GPT-6
-# Date:        17-10-2026
-# Version:     1.0.0
+# Date:        01-11-2026
+# Version:     1.1.0
+#   1.1.0 (01-11-2026, Claude Opus 5.5): entry delay needs the armed flags and
+#         the real panel prompt (a zone named "...ENTRY..." no longer reads as
+#         an entry delay); bypass zone numbers can be 3 digits (Vista-128/250);
+#         unused ZoneState, VISTA_MODELS, TPI_POLL_RESPONSE and
+#         LoginResult.DISCONNECTED removed.
 #
 # References used to build this:
 #   - Eyez-On Envisalink TPI specification (Honeywell)
@@ -45,7 +50,6 @@ TPI_ZONE_STATE      = "%01"   # zone state bitmap
 TPI_PARTITION_STATE = "%02"   # partition status (all 8 partitions)
 TPI_REALTIME_CID    = "%03"   # real-time Contact ID event
 TPI_ZONE_TIMER_DUMP = "%FF"   # zone timer dump (response to DumpZoneTimers)
-TPI_POLL_RESPONSE   = "^00"   # response to a KeepAlive
 
 # Outgoing command codes (sent as ^CC,DATA$ — no checksum)
 CMD_KEEPALIVE          = "00"
@@ -79,14 +83,6 @@ FLAG_FIRE            = 0x2000
 FLAG_LOW_BATTERY     = 0x4000
 FLAG_ARMED_STAY      = 0x8000
 
-# Panel models we recognise (informational)
-VISTA_MODELS = (
-    "VISTA-15",   "VISTA-15P",
-    "VISTA-20",   "VISTA-20P",  "VISTA-21IP",
-    "VISTA-128",  "VISTA-128BP",
-    "VISTA-250",  "VISTA-250BP",
-)
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Enumerations
@@ -108,17 +104,10 @@ class PartitionState(Enum):
     TROUBLE           = "trouble"
 
 
-class ZoneState(Enum):
-    UNKNOWN  = "unknown"
-    CLOSED   = "closed"   # Indigo "off"
-    OPEN     = "open"     # Indigo "on" — fault / tripped
-
-
 class LoginResult(Enum):
     OK           = "ok"
     FAILED       = "failed"
     TIMEOUT      = "timeout"
-    DISCONNECTED = "disconnected"
 
 
 # Partition status codes from a %02 message (2 hex chars each). Per
@@ -505,7 +494,12 @@ def derive_partition_state(ku: KeypadUpdate) -> PartitionState:
         return PartitionState.ALARM_MEMORY
     if "MAY EXIT NOW" in text or "EXIT NOW" in text:
         return PartitionState.EXIT_DELAY
-    if "DISARM SYSTEM OR ALARM" in text or "ENTRY" in text:
+    # Entry delay only exists while armed, and the panel then prompts "DISARM
+    # SYSTEM OR ALARM WILL OCCUR". A bare "ENTRY" test matched zone names too:
+    # "FAULT 05 FRONT ENTRY DOOR" on a DISARMED panel read as an entry delay.
+    # The 32-char display is two 16-char lines run together, so the prompt can
+    # arrive as "DISARM SYSTEM ORALARM..." or padded — compare without spaces.
+    if ku.armed and "DISARMSYSTEM" in text.replace(" ", ""):
         return PartitionState.ENTRY_DELAY
     if ku.armed:
         if "INSTANT" in text:
@@ -596,10 +590,14 @@ def encode_arm_max(code: str, partition: int = 1) -> List[str]:
     return encode_keystroke_sequence(code + KEY_MAX, partition)
 
 
-def encode_bypass_zone(code: str, zone: int, partition: int = 1) -> List[str]:
-    if zone < 1 or zone > 250:
-        raise ValueError(f"zone out of range: {zone}")
-    return encode_keystroke_sequence(f"{code}{KEY_BYPASS}{zone:02d}", partition)
+def encode_bypass_zone(code: str, zone: int, partition: int = 1, zone_digits: int = 2) -> List[str]:
+    """Code + 6 + zone number. Vista-21iP and smaller panels take a 2-digit zone
+    (05); the Vista-128 and 250 families take 3 digits (005)."""
+    if zone_digits not in (2, 3):
+        raise ValueError(f"zone_digits must be 2 or 3: {zone_digits}")
+    if zone < 1 or zone > (99 if zone_digits == 2 else 250):
+        raise ValueError(f"zone out of range for a {zone_digits}-digit panel: {zone}")
+    return encode_keystroke_sequence(f"{code}{KEY_BYPASS}{zone:0{zone_digits}d}", partition)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

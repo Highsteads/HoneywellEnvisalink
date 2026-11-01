@@ -60,11 +60,15 @@ Look in the Event Log for the reason:
 - **"set a valid partition number"** — open the partition device and enter its number, from 1 to 8.
 - **"command was interrupted"** — check the real keypad before sending another command. The plugin does not retry the keys.
 
-If none of these appears, the keys were sent. Check the partition's **Keypad display** state, which shows what the panel made of them. If a door or window is open, the panel may not arm, so check the partition's **Ready** state first.
+- **"zone ... needs a 3-digit panel"** — zones above 99 exist only on the Vista 128BP and 250BP. Set the panel device's **Panel model** to match your panel.
+- **"Envisalink rejected command"** — the Envisalink refused a key. Check the real keypad.
+- **"the panel did not confirm it"** — the keys were sent, but the partition did not show the result within 30 seconds. Check the partition's **Keypad display** state, which shows what the panel made of them. If a door or window is open, the panel may not arm, so check the partition's **Ready** state first.
+
+If the Event Log says **"confirmed by the panel"**, it worked.
 
 ## The Envisalink disconnected trigger runs again and again
 
-While the Envisalink cannot be reached, the event runs on every failed attempt to reconnect. Once the plugin gets through, it stops.
+Since version 1.1.0 it runs once for each outage, however many times the plugin retries, and **Envisalink reconnected** runs when it gets through. If it still runs again and again, the connection really is dropping and reconnecting. Check the Envisalink's power and network cable.
 
 ## A device shows disconnected or waiting for panel update
 
