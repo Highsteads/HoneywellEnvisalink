@@ -7,6 +7,19 @@ nav_order: 11
 
 The newest version is at the top. Versions before 1.0.0 were beta releases.
 
+## 1.1.0 — 1 November 2026
+
+These come from a code review of 1.0. They were tested against a simulated Envisalink, not yet on a real panel.
+
+- **Partition disarmed runs after an alarm, and while a trouble is showing.** After an alarm the keypad shows the alarm memory until you enter your code a second time, and a low battery or other trouble shows as Trouble. The event used to wait for Ready or Not Ready, so it did not run after an alarm and could miss a disarm with a trouble showing. It now follows the panel's armed lights: when the partition stops being armed, it runs once. **Partition state** still shows Alarm Memory or Trouble.
+- **A silent panel is reported.** The Envisalink answers the plugin's keep-alive messages even when the panel or its keypad wiring is offline, so the connection looked healthy while the readings were frozen. If no keypad status arrives for 60 seconds while connected, the Event Log warns once, partitions and zones show **panel silent**, and the new **Panel stopped sending status** event runs. When status returns, the log says so once and **Panel status resumed** runs.
+- **The Mac always reconnects after waking.** The plugin now uses Indigo's documented sleep and wake names, and a fault in Indigo's own wake step can no longer stop the reconnect.
+- **User codes must be exactly 4 digits.** A 6-digit code used to be accepted, but the panel reads the first four digits as the code and the rest as keys. Disarming with 123456 would have pressed TEST. Actions saved with a longer code are refused when they run, and the Event Log says why. Open each one and enter the 4-digit code.
+- **Restarting the plugin does not run the armed or disarmed events.** The first reading after a restart is noted quietly. An alarm already in progress at start-up still runs **Alarm triggered**.
+- **A second alarm is never swallowed.** Alarms are tracked apart from arming, so a fire alarm while disarmed can run **Alarm triggered** again the next time.
+- **Errors are easier to report.** If a message from the panel cannot be handled, the Event Log shows the full error once, instead of only its type every few seconds.
+- **Turning test mode or protocol logging on or off is saved straight away**, so a crash cannot bring back the old setting.
+
 ## 1.0.0 — 17 October 2026
 
 - **The first stable release.** eme jota ce confirmed several months of use on a Vista 20P with an Envisalink 4, including two trips abroad, without problems. The beta label has gone from Indigo and the guide. Test mode still starts on for new installs.

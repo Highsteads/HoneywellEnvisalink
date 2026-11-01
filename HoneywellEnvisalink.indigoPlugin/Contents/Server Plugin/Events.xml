@@ -7,4 +7,6 @@
     <Event id="armed_max"><Name>Partition armed (max)</Name></Event>
     <Event id="disarmed"><Name>Partition disarmed</Name></Event>
     <Event id="evl_disconnected"><Name>Envisalink disconnected</Name></Event>
+    <Event id="panel_silent"><Name>Panel stopped sending status</Name></Event>
+    <Event id="panel_restored"><Name>Panel status resumed</Name></Event>
 </Events>

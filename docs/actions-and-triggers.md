@@ -25,7 +25,7 @@ Each action works on a **Honeywell Partition** device and needs a user code. Eac
 1. Add an action to a trigger, schedule, action group or control page.
 2. In the action's type menu, find **HoneywellEnvisalink** under **Device Actions**, and pick the action.
 3. Choose the partition device.
-4. Type your code into **User code**. It must be 4 or 6 ordinary digits, and the box masks it. The dialog refuses anything else.
+4. Type your code into **User code**. It must be exactly 4 ordinary digits, and the box masks it. The dialog refuses anything else.
 5. For **Bypass zone**, also type the zone's number, from 1 to 250, into **Zone to bypass**. The action will not save with anything else.
 
 ### What happens when it runs
@@ -48,14 +48,16 @@ These run a trigger. To use one, create a new trigger, choose **HoneywellEnvisal
 | **Partition armed (stay)** | A partition is armed in Stay mode. |
 | **Partition armed (instant)** | A partition is armed in Instant mode. |
 | **Partition armed (max)** | A partition is armed in Max mode. |
-| **Partition disarmed** | A partition is disarmed, even if a door or window was left open. |
+| **Partition disarmed** | A partition stops being armed, even if a door or window was left open, after an alarm, or with a trouble showing. |
 | **Envisalink disconnected** | The connection to the Envisalink drops, or an attempt to reconnect fails. |
+| **Panel stopped sending status** | The Envisalink is connected, but no keypad status has come from the panel for 60 seconds. The panel, or the wiring between it and the Envisalink, may be offline. It runs once until status returns. A good one to send you a notification. |
+| **Panel status resumed** | Keypad status is coming from the panel again after **Panel stopped sending status**. |
 
 Before you rely on them:
 
 - **The events do not say which partition.** Each one runs for any partition. If you have more than one partition, read the partition device's **Partition state** in your trigger's conditions, or use a device state trigger as below.
 - **Each event runs once per change.** The same state reported again does not run the trigger again.
-- **When the plugin starts,** the first reading from each partition runs the event that matches its state. So a **Partition disarmed** trigger runs once at start-up if the panel is disarmed.
+- **When the plugin starts,** the first reading from each partition is noted quietly and runs no armed or disarmed event. The exception is an alarm: if a partition is already in alarm, **Alarm triggered** runs.
 - **The armed events can run at the start of the exit delay.** On the tester's panel, the panel reports the armed state as soon as arming begins, so an armed event runs then rather than when the countdown ends.
 - **Envisalink disconnected runs on every failed attempt** while the Envisalink cannot be reached — after 5, 10, 20 and 40 seconds and then every minute. If it sends you a notification, expect one for each attempt.
 

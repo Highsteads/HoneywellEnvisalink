@@ -4,8 +4,16 @@
 # Description: HoneywellEnvisalink — Indigo plugin connecting Honeywell Vista
 #              alarm panels to Indigo via Envisalink network modules (EVL3/4/5).
 # Author:      CliveS & Codex GPT-6
-# Date:        17-10-2026
-# Version:     1.0.0
+# Date:        01-11-2026
+# Version:     1.1.0
+#   1.1.0 (01-11-2026, Claude Opus 5.5): fixes from the 1.0 code review.
+#         Sleep/wake uses Indigo's documented prepareToSleep/wakeUp and always
+#         reconnects after a wake. "Partition disarmed" follows the armed flags,
+#         so it fires after an alarm or with a trouble showing. A silent panel is
+#         reported (new events panel_silent / panel_restored). User codes are
+#         exactly 4 digits. No events from the first reading after a restart
+#         (except an alarm already in progress). Frame errors log a traceback
+#         once. Test-mode and protocol-log toggles are saved at once.
 #   1.0.0 (17-10-2026): stable release after field use, safer command routing,
 #         zone parsing, connection lifecycle, polling and private diagnostics.
 #   0.6.0 (27-09-2026, Claude Opus 5.5): partition/zone/bypass numbers checked in
@@ -21,6 +29,7 @@ import indigo
 import logging
 import threading
 import time
+import traceback
 from datetime import datetime
 
 import tpi_capture
@@ -34,7 +43,7 @@ from honeywell_protocol import (
     encode_disarm, encode_arm_away, encode_arm_stay, encode_arm_instant,
     encode_arm_max, encode_bypass_zone, encode_dump_zone_timers,
 )
-from envisalink_client import EnvisalinkClient
+from envisalink_client import EnvisalinkClient, PANEL_SILENT_S
 
 # Optional: startup banner — bundled with the plugin
 try:
@@ -49,7 +58,7 @@ try:
 except ImportError:
     ENVISALINK_PASSWORD = ""
 
-PLUGIN_VERSION = "1.0.0"
+PLUGIN_VERSION = "1.1.0"
 PLUGIN_ID = "com.clives.indigoplugin.honeywell-envisalink"
 
 DEFAULT_PORT = 4025
@@ -106,6 +115,12 @@ def _as_zone_poll(value, default=DEFAULT_ZONE_POLL_S):
 MIN_PARTITION, MAX_PARTITION = 1, 8
 MIN_ZONE, MAX_ZONE = 1, 250
 
+# Vista user codes are four digits. A longer "code" is dangerous rather than
+# merely wrong: the panel takes the first four digits as the code and the rest as
+# commands, so 123456 + disarm would key 1234, then 5 (TEST), then 6, then 1.
+USER_CODE_LENGTH = 4
+MAX_FRAME_ERRORS_LOGGED = 50   # distinct (code, error type) pairs given a full traceback
+
 
 def _whole_number_in_range(value, low, high):
     """Return the value as an int if it is a whole number from low to high
@@ -142,7 +157,10 @@ class Plugin(indigo.PluginBase):
         self.panel_dev = None
         self.partition_devs = {}   # partition_number → indigo.device
         self.zone_devs = {}        # zone_number → indigo.device
-        self.partition_last_event = {}   # partition → last fired event id (de-spam)
+        self.partition_last_event = {}   # partition → last armed-mode/disarmed event (de-spam latch)
+        self.partition_in_alarm = {}     # partition → True while in alarm (separate latch)
+        self._panel_silent = False       # True while the panel has stopped sending %00
+        self._frame_errors_logged = set()   # (frame code, error type) already given a traceback
         self.zone_last_change = {}       # zone → time of last %01 real-time update
         self._last_status_request = float("-inf")
         self._last_strain_warn = 0.0     # rate-limit the EVL-overload warning
@@ -189,27 +207,44 @@ class Plugin(indigo.PluginBase):
 
     # ── Mac sleep / wake — close TCP socket to EVL cleanly on sleep so the
     # ── board doesn't hold our previous session, then reconnect on wake.
-    # ── Mirrors startup() guards so a blank-config state doesn't loop-retry.
-    def prepare_to_sleep(self):
-        self.logger.info("Mac going to sleep — disconnecting from Envisalink")
-        if self.client:
-            self.client.stop()
-            self.client = None
-        self._mark_disconnected()
-        super().prepare_to_sleep()
-    prepareToSleep = prepare_to_sleep
+    # ── Indigo calls the camelCase names (the only ones in the 2025.2 plugin
+    # ── reference). Their defaults stop/start comm for every device and trigger,
+    # ── so we still call them, but a fault there must never stop the reconnect.
 
-    def wake_up(self):
+    def _call_base(self, name):
+        """Call PluginBase's default <name>() if it has one, logging (not raising)
+        any error so our own sleep/wake work always completes."""
+        base = getattr(super(), name, None)
+        if not callable(base):
+            return
+        try:
+            base()
+        except Exception as e:
+            self.logger.error(f"Indigo's default {name}() raised {type(e).__name__}: {e}")
+
+    def prepareToSleep(self):
+        self.logger.info("Mac going to sleep — disconnecting from Envisalink")
+        try:
+            if self.client:
+                self.client.stop()
+                self.client = None
+            self._mark_disconnected()
+        finally:
+            self._call_base("prepareToSleep")
+
+    def wakeUp(self):
         self.logger.info("Mac woke — reconnecting to Envisalink")
-        super().wake_up()
-        if self.host and self.password:
-            self._start_client()
-        else:
-            self.logger.info(
-                "EVL not configured — staying disconnected. Open Plugins → "
-                "HoneywellEnvisalink → Configure to set host/password."
-            )
-    wakeUp = wake_up
+        try:
+            self._call_base("wakeUp")   # default: deviceStartComm for every device
+        finally:
+            # Always reached, so a failure above cannot leave the alarm unwatched.
+            if self.host and self.password:
+                self._start_client()
+            else:
+                self.logger.info(
+                    "EVL not configured — staying disconnected. Open Plugins → "
+                    "HoneywellEnvisalink → Configure to set host/password."
+                )
 
     def _request_zone_refresh(self):
         # Device creation and status requests must not produce a burst of polls.
@@ -244,6 +279,7 @@ class Plugin(indigo.PluginBase):
             debug_protocol=self.debug_protocol,
             on_raw_line=self._on_raw_line,
             zone_poll_interval_s=self.zone_poll_seconds,
+            on_panel_silent=self._on_panel_silent,
         )
         self.client.start()
         self.logger.info(f"started EVL client → {self.host}:{self.port}")
@@ -295,7 +331,7 @@ class Plugin(indigo.PluginBase):
         errs = indigo.Dict()
         code = valuesDict.get("user_code", "")
         if not self._valid_user_code(code):
-            errs["user_code"] = "Enter a user code of exactly four or six ASCII digits."
+            errs["user_code"] = "Enter your four-digit user code (digits only)."
         if typeId == "bypass_zone":
             if _whole_number_in_range(valuesDict.get("zone_number"),
                                       MIN_ZONE, MAX_ZONE) is None:
@@ -376,7 +412,10 @@ class Plugin(indigo.PluginBase):
             self.logger.error(f"{dev.name}: number {number} is already used by {existing.name}")
             return
         routes[number] = dev
-        dev.setErrorStateOnServer("waiting for panel update" if connected else "disconnected")
+        if not connected:
+            dev.setErrorStateOnServer("disconnected")
+        else:
+            dev.setErrorStateOnServer("panel silent" if self._panel_silent else "waiting for panel update")
         if connected:
             self._request_zone_refresh()
 
@@ -390,7 +429,12 @@ class Plugin(indigo.PluginBase):
             if stored.id == dev.id:
                 routes.pop(number, None)
                 if dev.deviceTypeId == "partition":
-                    self.partition_last_event.pop(number, None)
+                    # Keep the event latches (keyed by partition NUMBER, harmless
+                    # to keep). Indigo's default prepareToSleep stops comm for
+                    # every device; clearing here would make the first reading
+                    # after a wake seed silently and hide an arm/disarm that
+                    # happened while the Mac slept. Only a restart starts fresh.
+                    pass
                 else:
                     self.zone_last_change.pop(number, None)
 
@@ -427,9 +471,9 @@ class Plugin(indigo.PluginBase):
                 except Exception as e:
                     self.logger.error(f"firing '{event_id}' on trigger {trig.id}: {e}")
 
-    # Map a high-level partition state to the custom event it should fire.
-    _PARTITION_EVENTS = {
-        PartitionState.ALARM:         "alarm_triggered",
+    # Armed-mode and disarmed events. Alarm has its OWN latch (partition_in_alarm),
+    # so an alarm can never hide the disarm that follows it.
+    _ARM_EVENTS = {
         PartitionState.ARMED_AWAY:    "armed_away",
         PartitionState.ARMED_STAY:    "armed_stay",
         PartitionState.ARMED_INSTANT: "armed_instant",
@@ -438,16 +482,46 @@ class Plugin(indigo.PluginBase):
         PartitionState.NOT_READY:     "disarmed",
     }
 
-    def _emit_partition_events(self, partition, state):
-        """Fire the custom event for a partition state, but only when the resolved
-        event CHANGES. This means the '02' partition path and the keypad-derived
-        path don't double-fire, repeated frames of the same state don't spam
-        triggers, and a partition that only ever sends keypad updates (some EVL
-        firmware) still gets armed/disarmed/alarm events."""
-        evt = self._PARTITION_EVENTS.get(state)
-        if evt and self.partition_last_event.get(partition) != evt:
+    def _latch_arm_event(self, partition, evt):
+        """Fire an armed-mode/disarmed event only when it CHANGES for the partition.
+        One latch for both the '%02' and the keypad path, so they can't double-fire
+        and one disarm gives one 'disarmed'. The first reading after a restart only
+        seeds the latch: it says what the panel already was, not that it changed."""
+        if evt is None:
+            return
+        last = self.partition_last_event.get(partition)
+        if last is None:
+            self.partition_last_event[partition] = evt   # seed silently
+            return
+        if last != evt:
             self._fire_event(evt)
             self.partition_last_event[partition] = evt   # latch only after firing
+
+    def _latch_alarm(self, partition, in_alarm):
+        """Fire 'alarm_triggered' when a partition goes into alarm. Unlike the arm
+        latch, an alarm already in progress at start-up DOES fire — that is news."""
+        was = self.partition_in_alarm.get(partition, False)
+        self.partition_in_alarm[partition] = bool(in_alarm)
+        if in_alarm and not was:
+            self._fire_event("alarm_triggered")
+
+    def _emit_partition_events(self, partition, state):
+        """Events from a high-level state (the '%02' partition-status path)."""
+        self._latch_alarm(partition, state == PartitionState.ALARM)
+        self._latch_arm_event(partition, self._ARM_EVENTS.get(state))
+
+    def _emit_keypad_events(self, ku, derived):
+        """Events from a %00 keypad update. Armed/disarmed follows the ARMED FLAGS,
+        not the display state: after an alarm the panel shows 'alarm memory', and
+        with a trouble it shows 'trouble' — neither is READY, so a state-based rule
+        never fired 'disarmed' then. Flags off ⇒ disarmed, whatever the display."""
+        self._latch_alarm(ku.partition, derived == PartitionState.ALARM)
+        if ku.armed:
+            # Exit/entry delay and alarm memory map to None: no change of mode.
+            evt = self._ARM_EVENTS.get(derived)
+        else:
+            evt = "disarmed"
+        self._latch_arm_event(ku.partition, evt)
 
     # ── Frame dispatch ─────────────────────────────────────────────────────
 
@@ -473,6 +547,31 @@ class Plugin(indigo.PluginBase):
                 dev.setErrorStateOnServer("disconnected")
             except Exception as e:
                 self.logger.warning(f"Could not mark device {dev.id} disconnected: {type(e).__name__}")
+
+    def _on_panel_silent(self, silent: bool):
+        """The client reports the panel has stopped (True) or resumed (False)
+        sending %00 keypad updates while the Envisalink link itself stays up."""
+        if silent:
+            first = not self._panel_silent
+            self._panel_silent = True
+            for dev in list(self.partition_devs.values()) + list(self.zone_devs.values()):
+                try:
+                    dev.setErrorStateOnServer("panel silent")
+                except Exception as e:
+                    self.logger.warning(f"Could not mark device {dev.id} panel silent: {type(e).__name__}")
+            if first:   # already silent before a reconnect: re-mark, but no repeat alert
+                self.logger.warning(
+                    f"No keypad status from the panel for {PANEL_SILENT_S}s although the "
+                    "Envisalink is connected. The panel or its keypad wiring may be offline, "
+                    "so partition and zone states are NOT current.")
+                self._fire_event("panel_silent")
+            return
+        if not self._panel_silent:
+            return
+        self._panel_silent = False
+        self.logger.info("Keypad status from the panel has resumed — states are current again.")
+        self._fire_event("panel_restored")
+        self._request_zone_refresh()
 
     def _on_disconnect(self, reason: str):
         self.logger.warning(f"EVL disconnected: {reason}")
@@ -505,7 +604,17 @@ class Plugin(indigo.PluginBase):
                 self._handle_command_response(frame)
                 return
         except Exception as e:
-            self.logger.warning(f"TPI frame {frame.code} ignored: {type(e).__name__}")
+            # Full detail ONCE per (frame code, error type), so a real bug is
+            # diagnosable without a %00 every ~10s flooding the log.
+            key = (frame.code, type(e).__name__)
+            if key not in self._frame_errors_logged and len(self._frame_errors_logged) < MAX_FRAME_ERRORS_LOGGED:
+                self._frame_errors_logged.add(key)
+                self.logger.error(
+                    f"TPI frame {frame.code} could not be handled: {type(e).__name__}: {e} "
+                    f"(further {type(e).__name__} errors on {frame.code} frames are only "
+                    f"shown with debug logging)\n{traceback.format_exc()}")
+            elif self.debug:
+                self.logger.debug(f"TPI frame {frame.code} ignored: {type(e).__name__}: {e}")
 
     def _handle_keypad_update(self, ku: KeypadUpdate):
         dev = self.partition_devs.get(ku.partition)
@@ -527,7 +636,7 @@ class Plugin(indigo.PluginBase):
             {"key": "ledBitmap",     "value": f"0x{ku.led_bitmap:04X}"},
             {"key": "beepCode",      "value": ku.beep_code},
         ])
-        self._emit_partition_events(ku.partition, derived)
+        self._emit_keypad_events(ku, derived)
 
     def _set_zone(self, dev, is_open):
         dev.updateStatesOnServer([
@@ -697,7 +806,7 @@ class Plugin(indigo.PluginBase):
 
     @staticmethod
     def _valid_user_code(code):
-        return (isinstance(code, str) and len(code.strip()) in (4, 6)
+        return (isinstance(code, str) and len(code.strip()) == USER_CODE_LENGTH
                 and all("0" <= c <= "9" for c in code.strip()))
 
     def _user_code_from(self, action) -> str:
@@ -716,7 +825,7 @@ class Plugin(indigo.PluginBase):
             return False
         code = self._user_code_from(action)
         if not code:
-            self.logger.error(f"{label}: enter a user code of four or six ASCII digits")
+            self.logger.error(f"{label}: enter your four-digit user code (digits only) in the action")
             return False
         partition = self._partition_from(dev)
         if partition is None:
@@ -866,13 +975,27 @@ class Plugin(indigo.PluginBase):
         if self.client:
             self.client.set_debug_protocol(self.debug_protocol)
         self.pluginPrefs["debug_protocol"] = self.debug_protocol
+        self._save_prefs_now()
         indigo.server.log(
             f"Protocol debug logging now {'ON' if self.debug_protocol else 'OFF'}"
         )
 
+    def _save_prefs_now(self):
+        """Write pluginPrefs to disk now. Indigo otherwise saves them only when the
+        plugin stops cleanly, so after a crash a menu toggle (e.g. test mode back
+        ON) would be lost. indigo.server.savePluginPrefs is the call the Indigo
+        2025.2 tutorial names; on any failure the automatic save still applies."""
+        try:
+            indigo.server.savePluginPrefs()
+        except Exception as e:
+            self.logger.warning(
+                f"Could not save plugin settings straight away ({type(e).__name__}: {e}); "
+                "Indigo will save them when the plugin stops.")
+
     def menu_toggle_test_mode(self, valuesDict=None, typeId=None):
         self.test_mode = not self.test_mode
         self.pluginPrefs["test_mode"] = self.test_mode
+        self._save_prefs_now()
         warn = "" if self.test_mode else " — COMMANDS NOW LIVE, can arm/disarm panel!"
         # NB: indigo.server.warningLogLevel does NOT exist (verified live) — passing
         # it raised AttributeError on exactly the commands-live branch. Use the

@@ -56,7 +56,7 @@ Look in the Event Log for the reason:
 
 - **"TEST MODE: ... suppressed"** — test mode is on. See [Safety and test mode](safety.md).
 - **"dropped — EVL not connected"** — the plugin was not connected when the action ran, so nothing was sent.
-- **"enter a user code"** — open the action and enter four or six ordinary digits.
+- **"enter your four-digit user code"** — open the action and enter your 4-digit code. Actions saved with a 6-digit code before version 1.1.0 need changing.
 - **"set a valid partition number"** — open the partition device and enter its number, from 1 to 8.
 - **"command was interrupted"** — check the real keypad before sending another command. The plugin does not retry the keys.
 
@@ -69,6 +69,10 @@ While the Envisalink cannot be reached, the event runs on every failed attempt t
 ## A device shows disconnected or waiting for panel update
 
 Its last reading is kept, but it is no longer confirmed. The error clears when a fresh report for that device arrives. Check the panel's **Connected** state and the network connection. If zone refresh is off, request a status update or restore the refresh interval.
+
+## A device shows panel silent
+
+The Envisalink is connected, but the panel has sent no keypad status for 60 seconds, so the readings are not current. Check that the panel has power and that the wires between the panel and the Envisalink are firmly connected. When status returns, the Event Log says so and the error clears with the next reading.
 
 ## A device shows duplicate number or duplicate panel
 

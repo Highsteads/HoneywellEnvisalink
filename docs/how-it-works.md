@@ -15,13 +15,15 @@ Through that connection the Envisalink sends Indigo a copy of what the keypad sh
 
 Every 20 seconds the plugin sends the Envisalink a short message to keep the connection alive. If it hears nothing back for 60 seconds, it assumes the connection has gone stale and starts again.
 
+The Envisalink answers those messages itself, even if the panel behind it has gone quiet. So the plugin also watches for the keypad status the panel sends every few seconds. If none arrives for 60 seconds while connected, the Event Log warns, the devices show **panel silent**, and the **Panel stopped sending status** event runs.
+
 ## When the connection drops
 
 If the plugin cannot reach the Envisalink, or the connection drops, it waits 5 seconds and tries again, then 10, 20 and 40 seconds, and then every 60 seconds until it gets through. Each time, the panel device shows **Connected** as false, the Event Log has a warning, and the **Envisalink disconnected** event runs.
 
 If the Envisalink refuses the password, the plugin stops trying, because the same password will fail every time. The Event Log says so, and the plugin waits for you to correct the password, as the [When something goes wrong](troubleshooting.md) page explains.
 
-When the Mac goes to sleep, the plugin closes the connection cleanly, and it opens a fresh one when the Mac wakes.
+When the Mac goes to sleep, the plugin closes the connection cleanly, and it opens a fresh one when the Mac wakes. It reconnects after a wake even if another step of waking up goes wrong.
 
 ## Keeping zones up to date
 
@@ -35,7 +37,7 @@ It is one small request each time, and the plugin watches the Envisalink's repli
 
 A Honeywell panel is armed and disarmed by pressing keys. When you run an arm or disarm action, the plugin presses your user code and then one more key on the partition's virtual keypad, a key at a time with a short pause between each, exactly as you would at a real keypad. The [Actions and triggers](actions-and-triggers.md) page lists which key each action presses.
 
-Before it sends anything, the plugin checks that test mode is off, that it is connected, and that the code is 4 or 6 digits. If any of these fails, nothing is sent and the Event Log says why.
+Before it sends anything, the plugin checks that test mode is off, that it is connected, and that the code is exactly 4 digits. If any of these fails, nothing is sent and the Event Log says why.
 
 ## Keeping codes and passwords private
 
