@@ -2,7 +2,7 @@
 
 **Connect a Honeywell Vista alarm panel to Indigo through an Envisalink, and see and control it from Indigo.**
 
-**Version:** 1.0.0 | **Author:** CliveS & Codex | **Needs:** Indigo 2022.1 or later, and an Envisalink 3, 4 or 5
+**Version:** 1.1.0 | **Author:** CliveS & Codex | **Needs:** Indigo 2022.1 or later, and an Envisalink 3, 4 or 5
 
 **Version 1.0 is the first stable release.** [eme jota ce reported on 17 October](https://forums.indigodomo.com/viewtopic.php?p=233448#p233448) that the plugin had worked without problems at home and through two trips abroad since July, using a Vista 20P with an Envisalink 4. I do not have a Honeywell panel myself. Other panel models and actions retain the limits listed below. New installs still start in test mode, which blocks arm, disarm and bypass commands until you turn it off.
 
@@ -46,6 +46,13 @@ This plugin lets [Indigo](https://www.indigodomo.com) talk to a Honeywell Vista 
 The [full guide](https://highsteads.github.io/HoneywellEnvisalink/) goes through each step, explains every setting, and covers what to do if something does not work.
 
 ## What's new
+
+**v1.1.0** — Fixes from a code review of 1.0.
+- **Partition disarmed** now runs after an alarm and while a trouble is showing. Before, it waited until the alarm memory was cleared.
+- New events **Panel stopped sending status** and **Panel status resumed** tell you when the Envisalink is connected but the panel has gone quiet.
+- After the Mac wakes, the plugin always reconnects.
+- User codes must be exactly 4 digits. A longer code could press extra keys, such as TEST.
+- Restarting the plugin no longer runs the armed or disarmed events. An alarm already in progress still runs **Alarm triggered**.
 
 **v1.0.0** — The first stable release, following several months of use on a Vista 20P with an Envisalink 4.
 - Damaged zone reports keep the last reading rather than falsely closing zones.

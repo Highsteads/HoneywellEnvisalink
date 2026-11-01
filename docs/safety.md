@@ -18,7 +18,7 @@ To turn test mode off, either untick **Test mode (SAFE)** in **Plugins → Honey
 ## Your user codes
 
 - **Each action holds its own code.** You type a user code into each Disarm, Arm or Bypass zone action, and the code is kept with that action in Indigo. The box masks it as you type.
-- **A code must be 4 or 6 ordinary digits.** Anything else is refused, and the Event Log says the code is invalid or missing.
+- **A code must be exactly 4 ordinary digits.** Anything else is refused, and the Event Log says the code is invalid or missing. A longer code would be dangerous, because the panel would read the extra digits as keys. With 123456, the 5 is TEST.
 - **Codes never go anywhere else.** They are not kept in the plugin's settings or in any device state, and each key of a code is masked with `*` before any line reaches the log, the recent traffic list or a diagnostic file.
 - **I suggest giving Indigo its own user code on the panel,** so you can remove it later without changing anyone else's.
 

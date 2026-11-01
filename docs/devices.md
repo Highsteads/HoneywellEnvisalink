@@ -64,4 +64,4 @@ The plugin sets zones to Open or Closed only. The zone device's list of states a
 
 Choosing **Send Status Request** on a zone asks the panel for a fresh reading of its zones, rather than waiting for the next refresh.
 
-When the connection drops, partition and zone devices keep their last reading and show **disconnected**. That error clears only after a fresh report for that device. A duplicate partition or zone number is refused and the duplicate device shows an error.
+When the connection drops, partition and zone devices keep their last reading and show **disconnected**. If the Envisalink is connected but the panel stops sending status, they show **panel silent** instead. That error clears only after a fresh report for that device. A duplicate partition or zone number is refused and the duplicate device shows an error.

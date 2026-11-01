@@ -93,26 +93,33 @@ def make_plugin():
 
 
 class TestPartitionEventDedup:
+    # Since 1.1.0 the FIRST reading for a partition seeds the latch silently, so
+    # each test starts by seeding (the plugin restart case has its own tests).
+
     def test_fires_once_per_change(self):
         p, fired = make_plugin()
+        p._emit_partition_events(1, PartitionState.READY)          # seed
         p._emit_partition_events(1, PartitionState.ARMED_AWAY)
         p._emit_partition_events(1, PartitionState.ARMED_AWAY)   # repeat — no re-fire
         assert fired == ["armed_away"]
 
     def test_refires_on_transition(self):
         p, fired = make_plugin()
-        p._emit_partition_events(1, PartitionState.READY)
+        p._emit_partition_events(1, PartitionState.READY)          # seed
         p._emit_partition_events(1, PartitionState.ARMED_AWAY)
         p._emit_partition_events(1, PartitionState.READY)
-        assert fired == ["disarmed", "armed_away", "disarmed"]
+        p._emit_partition_events(1, PartitionState.ARMED_STAY)
+        assert fired == ["armed_away", "disarmed", "armed_stay"]
 
     def test_not_ready_fires_disarmed(self):
         p, fired = make_plugin()
+        p._emit_partition_events(1, PartitionState.ARMED_AWAY)     # seed
         p._emit_partition_events(1, PartitionState.NOT_READY)
         assert fired == ["disarmed"]
 
     def test_instant_and_max_fire_their_events(self):
         p, fired = make_plugin()
+        p._emit_partition_events(1, PartitionState.READY)          # seed
         p._emit_partition_events(1, PartitionState.ARMED_INSTANT)
         p._emit_partition_events(1, PartitionState.ARMED_MAX)
         assert fired == ["armed_instant", "armed_max"]
@@ -125,6 +132,8 @@ class TestPartitionEventDedup:
 
     def test_partitions_are_independent(self):
         p, fired = make_plugin()
+        p._emit_partition_events(1, PartitionState.READY)          # seed both
+        p._emit_partition_events(2, PartitionState.READY)
         p._emit_partition_events(1, PartitionState.ARMED_AWAY)
         p._emit_partition_events(2, PartitionState.ARMED_AWAY)
         assert fired == ["armed_away", "armed_away"]

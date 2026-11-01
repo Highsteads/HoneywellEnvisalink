@@ -6,8 +6,12 @@
 #              parsed frames to a callback. Debug logging mode dumps every byte
 #              in both directions (with user codes redacted).
 # Author:      CliveS & Codex GPT-6
-# Date:        17-10-2026
-# Version:     1.0.0
+# Date:        01-11-2026
+# Version:     1.1.0
+#   1.1.0 (01-11-2026, Claude Opus 5.5): panel-silence watch. The Envisalink
+#         answers our own keepalives even when the panel or keypad bus is
+#         offline, so "bytes received" alone cannot prove the panel is alive.
+#         We now also time the last %00 keypad update and report silence.
 
 import socket
 import threading
@@ -17,7 +21,7 @@ from datetime import datetime
 from typing import Callable, Optional
 
 from honeywell_protocol import (
-    LoginResult, RawFrame, parse_frame, encode_login, encode_keepalive,
+    LoginResult, RawFrame, TPI_KEYPAD_UPDATE, parse_frame, encode_login, encode_keepalive,
     encode_dump_zone_timers, redact_line_for_log,
 )
 
@@ -32,6 +36,7 @@ MAX_RECONNECT_DELAY_S = 60
 DEBUG_RING_BUFFER_SIZE = 500      # last N raw lines kept in memory for diagnostics
 THREAD_JOIN_TIMEOUT_S = 3         # shutdown grace period — short, so plugin host exits promptly
 KEYPRESS_GAP_S = 0.15             # gap between individual keystrokes so the panel doesn't overrun
+PANEL_SILENT_S = 60               # no %00 keypad update for this long while logged in ⇒ panel silent
 
 
 class EnvisalinkClient:
@@ -65,6 +70,8 @@ class EnvisalinkClient:
         debug_protocol: bool = False,
         on_raw_line: Optional[Callable[[str], None]] = None,
         zone_poll_interval_s: int = 0,
+        on_panel_silent: Optional[Callable[[bool], None]] = None,
+        panel_silent_s: float = PANEL_SILENT_S,
     ):
         self.host = host
         self.password = password
@@ -79,6 +86,11 @@ class EnvisalinkClient:
         # Optional tap on EVERY received line (parseable or not) — used by the
         # plugin's protocol-capture menu so it can record raw/unparsed lines too.
         self.on_raw_line = on_raw_line or (lambda line: None)
+        # Called with True when no %00 keypad update has arrived for
+        # panel_silent_s seconds while logged in, and with False once when they
+        # resume. 0 disables the watch.
+        self.on_panel_silent = on_panel_silent or (lambda silent: None)
+        self.panel_silent_s = panel_silent_s
         self.logger = logger
         self.debug_protocol = debug_protocol
 
@@ -101,6 +113,7 @@ class EnvisalinkClient:
         self.connect_count = 0
         self.last_connect_ts: Optional[float] = None
         self.last_rx_ts: Optional[float] = None
+        self.last_panel_status_ts: Optional[float] = None   # wall time of the last %00
 
     # ── Public API ──────────────────────────────────────────────────────────
 
@@ -223,6 +236,10 @@ class EnvisalinkClient:
                 datetime.fromtimestamp(self.last_rx_ts).isoformat()
                 if self.last_rx_ts else None
             ),
+            "last_panel_status": (
+                datetime.fromtimestamp(self.last_panel_status_ts).isoformat()
+                if self.last_panel_status_ts else None
+            ),
         }
 
     # ── Internal ────────────────────────────────────────────────────────────
@@ -254,6 +271,15 @@ class EnvisalinkClient:
             self.on_login(result)
         except Exception as e:
             self._log("error", f"on_login callback raised: {e}")
+
+    def _fire_panel_silent(self, silent: bool):
+        # Guarded like the other callbacks, and suppressed during shutdown.
+        if self._stop_evt.is_set():
+            return
+        try:
+            self.on_panel_silent(silent)
+        except Exception as e:
+            self._log("error", f"on_panel_silent callback raised: {e}")
 
     def _fire_disconnect(self, reason):
         # Guarded: a raise here used to escape _run() and kill the reconnect thread
@@ -330,11 +356,22 @@ class EnvisalinkClient:
         last_keepalive = time.monotonic()
         last_zone_poll = time.monotonic()
         last_receive = time.monotonic()
+        # Panel-silence watch. Any bytes (including the ^00 replies to our own
+        # keepalives) keep the TCP link "fresh", so the link check above cannot
+        # tell a dead panel from a live one. Only a %00 keypad update proves the
+        # panel itself is talking. Timed from login OK, per session.
+        last_panel_status = None
+        panel_silent = False
         while not self._stop_evt.is_set():
             now = time.monotonic()
             if now - last_receive > STALE_CONNECTION_S:
                 self._log("warning", "no traffic for 60s - reconnecting")
                 break
+            if (login_done and self.panel_silent_s and not panel_silent
+                    and last_panel_status is not None
+                    and now - last_panel_status >= self.panel_silent_s):
+                panel_silent = True
+                self._fire_panel_silent(True)
             # Deadlines run even when incoming traffic never pauses for a second.
             if login_done and now - last_keepalive >= KEEPALIVE_INTERVAL_S:
                 if not self.send_raw(encode_keepalive()):
@@ -405,6 +442,7 @@ class EnvisalinkClient:
                         continue
                     if text == "OK":
                         login_done = True
+                        last_panel_status = time.monotonic()   # baseline for the silence watch
                         self._connected = True
                         self._auth_failed = False
                         self._log("info", "login OK — connection live")
@@ -437,6 +475,14 @@ class EnvisalinkClient:
                     continue
 
                 self.frames_rx += 1
+                if frame.code == TPI_KEYPAD_UPDATE:
+                    last_panel_status = time.monotonic()
+                    self.last_panel_status_ts = time.time()
+                    if panel_silent:
+                        # Report recovery BEFORE dispatching the frame, so the
+                        # plugin has cleared its flag when the state update lands.
+                        panel_silent = False
+                        self._fire_panel_silent(False)
                 try:
                     self.on_frame(frame)
                 except Exception as e:
